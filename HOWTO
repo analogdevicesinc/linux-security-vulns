@@ -23,12 +23,9 @@ Source repos that are required:
 	Full linux-stable tree for git lookups.
 		git@gitolite.kernel.org:/pub/scm/linux/kernel/git/stable/linux
 
-	linux-stable_commit_tree, scripts used to figure out what commit was released in what directory.
-		https://git.sr.ht/~gregkh/linux-stable_commit_tree
+	Keep this repo up to date, they are updated with each new kernel release (stable and -rc)
 
-	Keep these two repos up to date, they are updated with each new kernel release (stable and -rc)
-
-	Export the following environment variables with full paths to both repos.
+	Export the following environment variable with the full path to the repo.
 
 	  export CVEKERNELTREE="${HOME}/<path_to_kernel>"
 
