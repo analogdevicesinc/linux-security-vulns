@@ -1,0 +1,47 @@
+name: Build Tools
+
+on:
+  push:
+    branches: [ philip/github-workflow ]
+  pull_request:
+    branches: [ philip/github-workflow ]
+
+env:
+  CARGO_TERM_COLOR: always
+  CVEKERNELTREE: ${{ github.workspace }}/linux
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vulns
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        path: vulns
+        submodules: true # Initialize submodules
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgit2-dev just meson cargo
+    - uses: actions/checkout@v4
+      with:
+        repository: gregkh/linux
+        path: linux
+        fetch-depth: 0
+    - name: Debug
+      run: |
+        ls ${CVEKERNELTREE}
+    - name: Build and populate verhaal database
+      run: |
+        cd tools/verhaal
+        just make
+        just build_db
+    - name: Build utils
+      run: just build_utils
+    - name: Run annual CVE summary
+      run: just summary
+    - name: Total vulnerable CVE's in 6.12.1
+      run: ./scripts/strak v6.12.1
