@@ -34,6 +34,19 @@ Source repos that are required:
 
 	If it helps, add them to your terminal rc file (~/.bashrc|~/.zshrc) et al.
 
+Build steps (matching CI):
+	# Initialize submodules
+	git submodule update --init --recursive
+
+	# Build and populate verhaal database
+	cd tools/verhaal
+	just make
+	just build_db
+	cd ../..
+
+	# Build utils
+	just build_utils
+
 Right now, the tools in scripts/ have hard-coded locations for the above 2
 source repos.  Edit them to point to where you place them in your directory
 tree, and maybe let's figure out how to specify them somehow on the command
