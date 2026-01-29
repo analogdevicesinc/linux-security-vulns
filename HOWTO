@@ -57,6 +57,8 @@ Set the environment variable CVE_USER="your email address used for CVE"
 You can set CVE_API_KEY environment variable as well, or you can type it in
 each time you access the CVE.org site, your call.
 
+https://pypi.org/project/cvelib/
+
 To test the ability to access the CVE database, run:
 	cve -o Linux org
 
