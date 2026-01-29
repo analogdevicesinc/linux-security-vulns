@@ -5,6 +5,12 @@ Prep work
 
 Things you need to have installed to get this all working:
 
+1. Install build dependencies (Debian/Ubuntu example):
+	sudo apt-get update
+	sudo apt-get install -y libgit2-dev just
+
+	Also ensure you have a stable Rust toolchain installed (e.g. via rustup).
+
 Binaries needed on your path to run automatically:
 	jo - https://github.com/jpmens/jo
 	cvelib - https://github.com/RedHatProductSecurity/cvelib.git
