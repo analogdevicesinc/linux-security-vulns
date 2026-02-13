@@ -42,6 +42,7 @@ jobs:
     - name: Build utils
       run: just build_utils
     - name: Run annual CVE summary
-      run: just summary
+      run: |
+        echo -e '```'"\n$(just summary)\n"'```' >> $GITHUB_STEP_SUMMARY
     - name: Total vulnerable CVE's in 6.12.1
-      run: ./scripts/strak v6.12.1
+      run: ./scripts/strak v6.12.1 | tail -n 1 >> $GITHUB_STEP_SUMMARY
