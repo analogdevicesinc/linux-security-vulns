@@ -2,9 +2,9 @@ name: Build Tools
 
 on:
   push:
-    branches: [ philip/github-workflow ]
+    branches: [ main ]
   pull_request:
-    branches: [ philip/github-workflow ]
+    branches: [ main ]
 
 env:
   CARGO_TERM_COLOR: always
