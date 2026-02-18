@@ -2,9 +2,9 @@ name: Build Tools
 
 on:
   push:
-    branches: [ main ]
+    branches: [ adi-main ]
   pull_request:
-    branches: [ main ]
+    branches: [ adi-main ]
   workflow_dispatch:
 
 env:
