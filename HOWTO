@@ -5,6 +5,12 @@ Prep work
 
 Things you need to have installed to get this all working:
 
+1. Install build dependencies (Debian/Ubuntu example):
+	sudo apt-get update
+	sudo apt-get install -y libgit2-dev just
+
+	Also ensure you have a stable Rust toolchain installed (e.g. via rustup).
+
 Binaries needed on your path to run automatically:
 	jo - https://github.com/jpmens/jo
 	cvelib - https://github.com/RedHatProductSecurity/cvelib.git
@@ -17,16 +23,26 @@ Source repos that are required:
 	Full linux-stable tree for git lookups.
 		git@gitolite.kernel.org:/pub/scm/linux/kernel/git/stable/linux
 
-	linux-stable_commit_tree, scripts used to figure out what commit was released in what directory.
-		https://git.sr.ht/~gregkh/linux-stable_commit_tree
+	Keep this repo up to date, they are updated with each new kernel release (stable and -rc)
 
-	Keep these two repos up to date, they are updated with each new kernel release (stable and -rc)
-
-	Export the following environment variables with full paths to both repos.
+	Export the following environment variable with the full path to the repo.
 
 	  export CVEKERNELTREE="${HOME}/<path_to_kernel>"
 
 	If it helps, add them to your terminal rc file (~/.bashrc|~/.zshrc) et al.
+
+Build steps (matching CI):
+	# Initialize submodules
+	git submodule update --init --recursive
+
+	# Build and populate verhaal database
+	cd tools/verhaal
+	just make
+	just build_db
+	cd ../..
+
+	# Build utils
+	just build_utils
 
 Right now, the tools in scripts/ have hard-coded locations for the above 2
 source repos.  Edit them to point to where you place them in your directory
@@ -37,6 +53,8 @@ Set the environment variable CVE_USER="your email address used for CVE"
 
 You can set CVE_API_KEY environment variable as well, or you can type it in
 each time you access the CVE.org site, your call.
+
+https://pypi.org/project/cvelib/
 
 To test the ability to access the CVE database, run:
 	cve -o Linux org
