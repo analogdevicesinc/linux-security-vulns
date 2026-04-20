@@ -69,6 +69,15 @@ jobs:
         echo "$compile_commands" >> "$GITHUB_ENV"
         echo "EOF" >> $GITHUB_ENV
 
+    - name: Clone vulns/cve/published
+      run: |
+        git clone --depth 1 --no-checkout --filter=blob:none \
+            https://git.kernel.org/pub/scm/linux/security/vulns.git \
+            vulns
+        cd vulns
+        git sparse-checkout set cve/published
+        git checkout
+
     - name: Restore artifacts
       uses: actions/cache/restore@v5
       with:
