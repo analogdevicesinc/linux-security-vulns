@@ -1,0 +1,12 @@
+[
+  {
+    "command": "...",
+    "directory": "...",
+    "file": "/path/to/_work/linux/linux/net/netfilter/xt_IDLETIMER.c"
+  },
+  {
+    "command": "...",
+    "directory": "...",
+    "file": "/path/to/_work/linux/linux/kernel/events/core.c"
+  }
+]

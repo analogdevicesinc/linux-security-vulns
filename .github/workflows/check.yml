@@ -23,7 +23,7 @@ jobs:
       contents: read
 
     steps:
-    - name: Restore CVE artifacts
+    - name: Restore artifacts
       uses: actions/cache/restore@v5
       with:
         key: cve-db-${{ github.sha }}
@@ -32,15 +32,6 @@ jobs:
           vulns/tools/target/release/strak
           vulns/tools/verhaal/verhaal.db
         fail-on-cache-miss: true
-
-    - name: Clone vulns/cve/published
-      run: |
-        git clone --depth 1 --no-checkout --filter=blob:none \
-            https://git.kernel.org/pub/scm/linux/security/vulns.git \
-            vulns
-        cd vulns
-        git sparse-checkout set cve/published
-        git checkout
 
     - name: Check
       run: |
@@ -52,17 +43,12 @@ jobs:
         }
 
         get_file get-cve-list.sh
-        get_file filter-cve-list.sh
 
         chmod +x vulns/tools/target/release/strak
 
         cve_all=$(mktemp)
         source ./get-cve-list.sh
-        source ./filter-cve-list.sh
 
         get-cve-list "${{ inputs.tag }}" "$cve_all"
 
         cat "$cve_all" >> $GITHUB_STEP_SUMMARY
-
-        # Will implement later:
-        # filter-cve-list "$cve_all" "$COMPILE_COMMANDS" | sort -u
