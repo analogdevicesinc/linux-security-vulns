@@ -62,7 +62,7 @@ jobs:
 
         source $(find raw -name context.txt | head -1)
         tag=$(echo "$kernel_release" | sed -E 's/-g[0-9a-f]+$//; s/\.0($|-rc)/\1/; s/^/v/')
-        compile_commands="$(find raw -name compile_commands.json | head -1)"
+        compile_commands="$(find raw -name compile_commands.json)"
 
         echo "tag=$tag">> "$GITHUB_ENV"
         echo "compile_commands<<EOF" >> $GITHUB_ENV
@@ -108,14 +108,25 @@ jobs:
 
         get-cve-list "$tag" "$cve_all"
 
-        cat "$cve_all"
+        cat "$cve_all" | wc -l
 
         echo "cve_all=$cve_all" >> $GITHUB_ENV
 
     - name: Check artifacts
       run: |
+        cves_all=""
+
         while IFS= read -r file; do
           [[ -n "$file" ]] || continue
-          echo "$file"
-          python3 filter-cve-list.py "$cve_all" "$file" | sort -u
+          echo -n "$file "
+          cves=$(python3 filter-cve-list.py "$cve_all" "$file" | sed '/^$/d' | sort -u)
+          cves_all="${cves_all}"$'\n'"${cves}"
+
+          echo "$cves" | wc -l
+          echo "$cves"
         done <<< "$compile_commands"
+
+        unique_cves=$(echo "$cves_all" | sed '/^$/d' | sort -u)
+
+        echo "Got ($(echo "$unique_cves" | wc -l)) unique CVEs:" >> $GITHUB_STEP_SUMMARY
+        echo "$unique_cves" >> $GITHUB_STEP_SUMMARY
