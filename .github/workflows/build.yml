@@ -1,0 +1,43 @@
+name: Database build
+run-name: Build security vulnerabilities database
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgit2-dev just meson cargo
+
+    - name: Build
+      run: |
+        [[ "${{ runner.debug }}" == "1" ]] && set -x
+
+        get_file () {
+          curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o $1 \
+              https://raw.githubusercontent.com/${{ github.repository }}/ci/$1
+        }
+
+        get_file build-cve-db.sh
+
+        source ./build-cve-db.sh
+        build-cve-db
+
+    - name: Save CVE artifacts to cache
+      uses: actions/cache/save@v5
+      with:
+        key: cve-db-${{ github.sha }}
+        path: |
+          vulns/tools/target/release/strak
+          vulns/tools/verhaal/verhaal.db
+          vulns/cve/published
