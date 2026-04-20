@@ -9,6 +9,8 @@ mkdir -p build ; cd $_
 
 build-cve-db
 
+python3 ../build-cve-files-db.py
+
 cd ..
 export CVEKERNELTREE=
 
@@ -27,22 +29,23 @@ mkdir -p check ; cd $_
 
 (cd ../build ; cp --parents vulns/tools/target/release/strak ../check )
 (cd ../build ; cp --parents vulns/tools/verhaal/verhaal.db ../check )
+(cd ../build ; cp --parents cve-files.db ../check )
 
 get_file () {
 	cp "../$1" .
 }
 
 get_file get-cve-list.sh
-get_file filter-cve-list.sh
+get_file filter-cve-list.py
 
 chmod +x vulns/tools/target/release/strak
 
 cve_all=$(mktemp)
 source ./get-cve-list.sh
-source ./filter-cve-list.sh
 
 get-cve-list "v6.19.3" "$cve_all"
 
-cat "$cve_all"
+cat "$cve_all" | wc -l
 
-filter-cve-list "$cve_all" "../compile_commands.json"
+echo "CVEs matched in compile_commands.json:"
+python3 filter-cve-list.py "$cve_all" "../compile_commands.json"

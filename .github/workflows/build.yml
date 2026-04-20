@@ -29,9 +29,11 @@ jobs:
         }
 
         get_file build-cve-db.sh
+        get_file build-cve-files-db.py
 
         source ./build-cve-db.sh
         build-cve-db
+        python3 build-cve-files-db.py
 
     - name: Save CVE artifacts to cache
       uses: actions/cache/save@v5
@@ -40,3 +42,4 @@ jobs:
         path: |
           vulns/tools/target/release/strak
           vulns/tools/verhaal/verhaal.db
+          cve-files.db
