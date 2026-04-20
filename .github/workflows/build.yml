@@ -40,4 +40,3 @@ jobs:
         path: |
           vulns/tools/target/release/strak
           vulns/tools/verhaal/verhaal.db
-          vulns/cve/published

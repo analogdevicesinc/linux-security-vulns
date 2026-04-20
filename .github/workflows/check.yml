@@ -31,8 +31,16 @@ jobs:
         path: |
           vulns/tools/target/release/strak
           vulns/tools/verhaal/verhaal.db
-          vulns/cve/published
         fail-on-cache-miss: true
+
+    - name: Clone vulns/cve/published
+      run: |
+        git clone --depth 1 --no-checkout --filter=blob:none \
+            https://git.kernel.org/pub/scm/linux/security/vulns.git \
+            vulns
+        cd vulns
+        git sparse-checkout set cve/published
+        git checkout
 
     - name: Check
       run: |
