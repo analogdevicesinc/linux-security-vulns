@@ -30,8 +30,7 @@ runs:
     - name: Restore artifacts
       uses: actions/cache/restore@v5
       with:
-        key: cve-db-${{ github.sha }}
-        restore-keys: cve-db-
+        key: linux-security-vulns
         path: |
           vulns/tools/target/release/strak
           vulns/tools/verhaal/verhaal.db

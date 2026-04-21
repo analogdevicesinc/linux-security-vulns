@@ -84,11 +84,10 @@ jobs:
       with:
         tag: ${{ env.tag }}
 
-    - name: Restore artifacts
+    - name: Restore CVE db
       uses: actions/cache/restore@v5
       with:
-        key: cve-db-${{ github.sha }}
-        restore-keys: cve-db-
+        key: linux-security-vulns
         path: |
           cve-files.db
         fail-on-cache-miss: true
