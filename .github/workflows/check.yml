@@ -23,41 +23,21 @@ jobs:
       contents: read
 
     steps:
-    - name: Clone vulns/cve/published
-      run: |
-        git clone --depth 1 --no-checkout --filter=blob:none \
-            https://git.kernel.org/pub/scm/linux/security/vulns.git \
-            vulns
-        cd vulns
-        git sparse-checkout set cve/published
-        git checkout
-
-    - name: Restore artifacts
-      uses: actions/cache/restore@v5
+    - uses: analogdevicesinc/linux-security-vulns/check-tag@ci-next
+      id: check
       with:
-        key: cve-db-${{ github.sha }}
-        restore-keys: cve-db-
-        path: |
-          vulns/tools/target/release/strak
-          vulns/tools/verhaal/verhaal.db
-        fail-on-cache-miss: true
+        tag: ${{ inputs.tag }}
 
-    - name: Check
+    - name: Create summary
       run: |
-        [[ "${{ runner.debug }}" == "1" ]] && set -x
+        cves='${{ steps.check.outputs.cves }}'
 
-        get_file () {
-          curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o $1 \
-              https://raw.githubusercontent.com/${{ github.repository }}/ci/$1
-        }
-
-        get_file get-cve-list.sh
-
-        chmod +x vulns/tools/target/release/strak
-
-        cve_all=$(mktemp)
-        source ./get-cve-list.sh
-
-        get-cve-list "${{ inputs.tag }}" "$cve_all"
-
-        cat "$cve_all" >> $GITHUB_STEP_SUMMARY
+        echo "## CVEs in ${{ inputs.tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| | | | | | |" >> $GITHUB_STEP_SUMMARY
+        echo "|-|-|-|-|-|-|" >> $GITHUB_STEP_SUMMARY
+        echo "$cves" | jq -r '
+          . as $in |
+          range(0; length; 6) |
+          $in[.:.+6] |
+          "| " + (map(.) | join(" | ")) + " |"' >> $GITHUB_STEP_SUMMARY

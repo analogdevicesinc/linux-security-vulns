@@ -1,0 +1,64 @@
+name: Check CVEs
+description: Get CVE list of kernel tag
+
+inputs:
+  tag:
+    description: "Kernel version tag"
+    default: ''
+  gh-token:
+    description: "GitHub Token"
+    default: ${{ github.token }}
+
+outputs:
+  cves:
+    description: "List of cves"
+    value: ${{ steps.check.outputs.cves }}
+
+runs:
+  using: composite
+  steps:
+    - name: Clone vulns/cve/published
+      shell: bash
+      run: |
+        git clone --depth 1 --no-checkout --filter=blob:none \
+            https://git.kernel.org/pub/scm/linux/security/vulns.git \
+            vulns
+        cd vulns
+        git sparse-checkout set cve/published
+        git checkout
+
+    - name: Restore artifacts
+      uses: actions/cache/restore@v5
+      with:
+        key: cve-db-${{ github.sha }}
+        restore-keys: cve-db-
+        path: |
+          vulns/tools/target/release/strak
+          vulns/tools/verhaal/verhaal.db
+        fail-on-cache-miss: true
+
+    - name: Check
+      id: check
+      shell: bash
+      run: |
+        [[ "${{ runner.debug }}" == "1" ]] && set -x
+
+        get_file () {
+          curl -sL -H "Authorization: Bearer ${{ inputs.gh-token }}" -o $1 \
+              https://raw.githubusercontent.com/${{ github.repository }}/ci/$1
+        }
+
+        get_file get-cve-list.sh
+
+        chmod +x vulns/tools/target/release/strak
+
+        cve_all=$(mktemp)
+        source ./get-cve-list.sh
+
+        get-cve-list "${{ inputs.tag }}" "$cve_all"
+
+        cves_list=$(grep -oE 'CVE-[0-9]{4}-[0-9]+' $cve_all || :)
+        echo "$cves_list"
+
+        cves_json=$(echo "$cves_list" | jq -Rsc 'split("\n") | map(select(length>0))')
+        echo "cves=$cves_json">> $GITHUB_OUTPUT
