@@ -1,4 +1,5 @@
-name: Check CVEs
+name: CVE tag scan
+run-name: CVE tag scan ${{ inputs.repository }}@${{ inputs.tag }}
 
 on:
   workflow_dispatch:

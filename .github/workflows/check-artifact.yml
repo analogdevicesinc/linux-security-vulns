@@ -1,4 +1,5 @@
-name: Check CVEs on artifact
+name: CVE artifact scan
+run-name: CVE artifact scan ${{ inputs.repository }}@${{ inputs.ref }}
 
 on:
   workflow_dispatch:
