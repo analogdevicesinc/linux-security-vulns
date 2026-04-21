@@ -89,15 +89,6 @@ jobs:
       with:
         tag: ${{ env.tag }}
 
-    - name: Restore CVE db
-      uses: actions/cache/restore@v5
-      with:
-        key: linux-security-vulns-${{ github.run_id }}
-        restore-keys: linux-security-vulns-
-        path: |
-          cve-files.db
-        fail-on-cache-miss: true
-
     - name: Check artifacts
       run: |
         [[ "${{ runner.debug }}" == "1" ]] && set -x

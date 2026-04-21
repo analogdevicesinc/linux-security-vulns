@@ -35,6 +35,7 @@ runs:
         path: |
           vulns/tools/target/release/strak
           vulns/tools/verhaal/verhaal.db
+          cve-files.db
         fail-on-cache-miss: true
 
     - name: Check
