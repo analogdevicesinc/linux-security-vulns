@@ -17,16 +17,6 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Clone vulns/cve/published
-      shell: bash
-      run: |
-        git clone --depth 1 --no-checkout --filter=blob:none \
-            https://git.kernel.org/pub/scm/linux/security/vulns.git \
-            vulns
-        cd vulns
-        git sparse-checkout set cve/published
-        git checkout
-
     - name: Restore artifacts
       uses: actions/cache/restore@v5
       with:
@@ -36,7 +26,19 @@ runs:
           vulns/tools/target/release/strak
           vulns/tools/verhaal/verhaal.db
           cve-files.db
+          dyads.db
         fail-on-cache-miss: true
+
+    - name: Restore dyad files
+      shell: bash
+      run: |
+        get_file () {
+          curl -sL -H "Authorization: Bearer ${{ inputs.gh-token }}" -o $1 \
+              https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/ci/$1
+        }
+        get_file restore-dyads.py
+
+        python3 restore-dyads.py dyads.db vulns/cve/published
 
     - name: Check
       id: check

@@ -11,6 +11,7 @@ mkdir -p build ; cd $_
 build-cve-db
 
 python3 ../build-cve-files-db.py
+python3 ../build-dyads-db.py
 
 cd ..
 export CVEKERNELTREE=
@@ -19,18 +20,12 @@ export CVEKERNELTREE=
 
 mkdir -p check ; cd $_
 
-[ -d "./vulns" ] && {
-	(cd vulns ; git pull origin master --depth 1)
-} || {
-	git clone --depth 1 --no-checkout --filter=blob:none \
-	    https://git.kernel.org/pub/scm/linux/security/vulns.git \
-	    vulns
-	(cd vulns ; git sparse-checkout set cve/published ; git checkout)
-}
-
 (cd ../build ; cp --parents vulns/tools/target/release/strak ../check )
 (cd ../build ; cp --parents vulns/tools/verhaal/verhaal.db ../check )
 (cd ../build ; cp --parents cve-files.db ../check )
+(cd ../build ; cp --parents dyads.db ../check )
+
+python3 ../restore-dyads.py dyads.db vulns/cve/published
 
 get_file () {
 	cp "../$1" .
