@@ -46,7 +46,7 @@ runs:
 
         get_file () {
           curl -sL -H "Authorization: Bearer ${{ inputs.gh-token }}" -o $1 \
-              https://raw.githubusercontent.com/${{ github.repository }}/ci/$1
+              https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/ci/$1
         }
 
         get_file get-cve-list.sh
