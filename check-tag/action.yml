@@ -30,7 +30,8 @@ runs:
     - name: Restore artifacts
       uses: actions/cache/restore@v5
       with:
-        key: linux-security-vulns
+        key: linux-security-vulns-${{ github.run_id }}
+        restore-keys: linux-security-vulns-
         path: |
           vulns/tools/target/release/strak
           vulns/tools/verhaal/verhaal.db

@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write # to delete existing cache
 
     steps:
     - name: Install build dependencies
@@ -36,32 +35,10 @@ jobs:
         build-cve-db
         python3 build-cve-files-db.py
 
-    - name: Delete existing CVE db cache
-      run: |
-        gh_api () {
-          curl -fL \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "$@"
-        }
-
-        cache-exists () {
-          gh_api "https://api.github.com/repos/${{ github.repository }}/actions/caches?key=$1" \
-            | jq -e '.total_count > 0' > /dev/null
-        }
-
-        cache-delete () {
-          gh_api -X DELETE \
-            "https://api.github.com/repos/${{ github.repository }}/actions/caches?key=$1"
-        }
-
-        cache-exists linux-security-vulns && cache-delete linux-security-vulns
-
     - name: Save CVE db to cache
       uses: actions/cache/save@v5
       with:
-        key: linux-security-vulns
+        key: linux-security-vulns-${{ github.run_id }}
         path: |
           vulns/tools/target/release/strak
           vulns/tools/verhaal/verhaal.db

@@ -87,7 +87,8 @@ jobs:
     - name: Restore CVE db
       uses: actions/cache/restore@v5
       with:
-        key: linux-security-vulns
+        key: linux-security-vulns-${{ github.run_id }}
+        restore-keys: linux-security-vulns-
         path: |
           cve-files.db
         fail-on-cache-miss: true
