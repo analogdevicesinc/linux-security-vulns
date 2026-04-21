@@ -42,11 +42,14 @@ get_file filter-cve-list.py
 chmod +x vulns/tools/target/release/strak
 
 cve_all=$(mktemp)
+cve_filtered=$(mktemp)
 source ./get-cve-list.sh
 
 get-cve-list "v6.19.3" "$cve_all"
+python3 filter-cve-list.py "../test/compile_commands.json" "$cve_all" "$cve_filtered"
 
-cat "$cve_all" | wc -l
+echo "Total CVEs: $(jq length "$cve_all")"
+echo "CVEs in compile_commands.json: $(jq length "$cve_filtered")"
+jq -r '.[]' "$cve_filtered"
 
-echo "CVEs matched in compile_commands.json:"
-python3 filter-cve-list.py "$cve_all" "../test/compile_commands.json"
+rm "$cve_all" "$cve_filtered"

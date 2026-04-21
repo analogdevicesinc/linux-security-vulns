@@ -57,8 +57,5 @@ runs:
 
         get-cve-list "${{ inputs.tag }}" "$cve_all"
 
-        cves_list=$(grep -oE 'CVE-[0-9]{4}-[0-9]+' $cve_all || :)
-        echo "$cves_list"
-
-        cves_json=$(echo "$cves_list" | jq -Rsc 'split("\n") | map(select(length>0))')
-        echo "cves=$cves_json">> $GITHUB_OUTPUT
+        echo "cves=$(cat $cve_all)">> $GITHUB_OUTPUT
+        rm "$cve_all"

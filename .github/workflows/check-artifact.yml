@@ -4,14 +4,23 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Git reference'
+        description: 'Branch, tag, SHA reference'
         required: true
         type: string
+      repository:
+        description: "Repository"
+        type: choice
+        options:
+        - adi/linux
   workflow_call:
     inputs:
       ref:
         required: true
         type: string
+      repository:
+        required: false
+        type: string
+        default: 'adi/linux'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -58,25 +67,22 @@ jobs:
         export SKIP_EXPAND_NIOS2="true"
 
         source ci/download_artifacts.sh
-        download_artifacts "${{ inputs.ref }}" "adi/linux"
+
+        download_artifacts "${{ inputs.ref }}" "${{ inputs.repository }}"
 
         source $(find raw -name context.txt | head -1)
         tag=$(echo "$kernel_release" | sed -E 's/-g[0-9a-f]+$//; s/\.0($|-rc)/\1/; s/^/v/')
-        compile_commands="$(find raw -name compile_commands.json)"
+        cc_files="$(find raw -name compile_commands.json)"
 
         echo "tag=$tag">> "$GITHUB_ENV"
-        echo "compile_commands<<EOF" >> $GITHUB_ENV
-        echo "$compile_commands" >> "$GITHUB_ENV"
+        echo "cc_files<<EOF" >> $GITHUB_ENV
+        echo "$cc_files" >> "$GITHUB_ENV"
         echo "EOF" >> $GITHUB_ENV
 
-    - name: Clone vulns/cve/published
-      run: |
-        git clone --depth 1 --no-checkout --filter=blob:none \
-            https://git.kernel.org/pub/scm/linux/security/vulns.git \
-            vulns
-        cd vulns
-        git sparse-checkout set cve/published
-        git checkout
+    - uses: analogdevicesinc/linux-security-vulns/check-tag@ci
+      id: check
+      with:
+        tag: ${{ env.tag }}
 
     - name: Restore artifacts
       uses: actions/cache/restore@v5
@@ -84,49 +90,44 @@ jobs:
         key: cve-db-${{ github.sha }}
         restore-keys: cve-db-
         path: |
-          vulns/tools/target/release/strak
-          vulns/tools/verhaal/verhaal.db
           cve-files.db
         fail-on-cache-miss: true
 
-    - name: Check tag
+    - name: Check artifacts
       run: |
         [[ "${{ runner.debug }}" == "1" ]] && set -x
+        cve_all=$(mktemp)
+        echo '${{ steps.check.outputs.cves }}' > $cve_all
 
         get_file () {
           curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o $1 \
               https://raw.githubusercontent.com/${{ github.repository }}/ci/$1
         }
 
-        get_file get-cve-list.sh
         get_file filter-cve-list.py
 
-        chmod +x vulns/tools/target/release/strak
-
-        cve_all=$(mktemp)
-        source ./get-cve-list.sh
-
-        get-cve-list "$tag" "$cve_all"
-
-        cat "$cve_all" | wc -l
-
-        echo "cve_all=$cve_all" >> $GITHUB_ENV
-
-    - name: Check artifacts
-      run: |
-        cves_all=""
+        echo "## CVEs in $tag per defconfig" >> $GITHUB_STEP_SUMMARY
 
         while IFS= read -r file; do
           [[ -n "$file" ]] || continue
-          echo -n "$file "
-          cves=$(python3 filter-cve-list.py "$cve_all" "$file" | sed '/^$/d' | sort -u)
-          cves_all="${cves_all}"$'\n'"${cves}"
 
-          echo "$cves" | wc -l
-          echo "$cves"
-        done <<< "$compile_commands"
+          cve_out=$(mktemp)
+          python3 filter-cve-list.py "$file" "$cve_all" "$cve_out"
 
-        unique_cves=$(echo "$cves_all" | sed '/^$/d' | sort -u)
+          len=$(cat "$cve_out" | jq length)
+          echo "### $file: $len" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| | | | | | |" >> $GITHUB_STEP_SUMMARY
+          echo "|-|-|-|-|-|-|" >> $GITHUB_STEP_SUMMARY
+          cat "$cve_out" | jq -r '
+            . as $in |
+            range(0; length; 6) |
+            $in[.:.+6] |
+            "| " + (map(.) | join(" | ")) + " |"' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
-        echo "Got ($(echo "$unique_cves" | wc -l)) unique CVEs:" >> $GITHUB_STEP_SUMMARY
-        echo "$unique_cves" >> $GITHUB_STEP_SUMMARY
+          rm "$cve_out"
+        done <<< "$cc_files"
+
+
+        rm "$cve_all"

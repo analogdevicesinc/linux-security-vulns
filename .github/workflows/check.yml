@@ -23,7 +23,7 @@ jobs:
       contents: read
 
     steps:
-    - uses: analogdevicesinc/linux-security-vulns/check-tag@ci-next
+    - uses: analogdevicesinc/linux-security-vulns/check-tag@ci
       id: check
       with:
         tag: ${{ inputs.tag }}
@@ -31,8 +31,9 @@ jobs:
     - name: Create summary
       run: |
         cves='${{ steps.check.outputs.cves }}'
+        len=$(echo "$cves" | jq length)
 
-        echo "## CVEs in ${{ inputs.tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "## CVEs in ${{ inputs.tag }}: $len" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "| | | | | | |" >> $GITHUB_STEP_SUMMARY
         echo "|-|-|-|-|-|-|" >> $GITHUB_STEP_SUMMARY
