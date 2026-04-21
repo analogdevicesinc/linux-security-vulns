@@ -21,6 +21,11 @@ on:
         required: false
         type: string
         default: 'adi/linux'
+    secrets:
+      CLOUDSMITH_API_KEY:
+        required: false
+      CLOUDSMITH_SERVICE_SLUG:
+        required: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
