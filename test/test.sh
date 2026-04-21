@@ -1,5 +1,6 @@
 #!/bin/bash
 # Test build + check, with cache for re-run
+# ./test/test.sh
 
 # -- build --
 
@@ -48,4 +49,4 @@ get-cve-list "v6.19.3" "$cve_all"
 cat "$cve_all" | wc -l
 
 echo "CVEs matched in compile_commands.json:"
-python3 filter-cve-list.py "$cve_all" "../compile_commands.json"
+python3 filter-cve-list.py "$cve_all" "../test/compile_commands.json"
