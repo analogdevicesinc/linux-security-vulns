@@ -11,12 +11,15 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use cve_utils::common;
+use cve_utils::compare_kernel_versions;
 use cve_utils::dyad::DyadEntry;
 use cve_utils::get_kernel_tree;
+use cve_utils::run_command;
 use cve_utils::Kernel;
 use log::debug;
 use log::error;
 use owo_colors::{OwoColorize, Stream::Stdout};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
@@ -203,8 +206,108 @@ fn print_fixed_commits(kernel_tree: &Path, dyad_records: &Vec<DyadRecord>, fixed
     }
 }
 
+/// Context for resolving ambiguous ancestry checks.
+///
+/// A commit based on v6.11-rc* and merged on v6.12 is added to verhaal released
+/// column as 6.12. Comparing CVE-fix.released <  commit.released is ambiguous,
+/// because the commit may predate the fix (reachable or mainland).
+///
+/// Create a window of reachable commits down to one previous stable release,
+/// as a faster merge-base --is-ancestor check.
+struct AncestryWindow {
+    /// Version string of the base tag
+    base_tag_version: String,
+    /// Set of SHAs from the test commit down to the previous stable release.
+    ancestor_set: HashSet<String>,
+}
+
+/// Find the previous stable (non-rc) release tag before the given base tag.
+/// v6.11-rc2 -> v6.10
+/// v6.11 -> v6.10
+fn previous_stable_tag(kernel_tree: &Path, base_tag: &str) -> Result<String> {
+    let kernel_tree_str = kernel_tree.to_string_lossy();
+    let parent = format!("{}~1", base_tag);
+    let tag = run_command(
+        "git",
+        &[
+            "describe", "--abbrev=0",
+            "--match=v[0-9]*",
+            "--exclude=*-rc*",
+            &parent,
+        ],
+        Some(&kernel_tree_str),
+    )?;
+    Ok(tag)
+}
+
+// Return 12 digits SHA
+fn short_sha(s: &str) -> &str {
+    &s[..12.min(s.len())]
+}
+
+/// Build the ancestry window for a test commit.
+///
+/// Find the most recent tag ancestor, then rev list from the previous stable to
+/// enumerate all commits. Assumes no fix is picked two releases after the base release
+/// of the fix.
+fn build_ancestry_context(kernel_tree: &Path, git_sha: &str) -> Result<AncestryWindow> {
+    let kernel_tree_str = kernel_tree.to_string_lossy();
+
+    let describe_output = run_command(
+        "git",
+        &["describe", git_sha],
+        Some(&kernel_tree_str),
+    )?;
+
+    // "v6.11-rc2-8-gbbf3c7ff9dfa" -> base tag "v6.11-rc2"
+    // "v6.12" -> base tag "v6.12"
+    let base_tag = if let Some(rest) = describe_output.strip_prefix('v')
+        && let Some((tag_with_count, _abbrev)) = rest.rsplit_once("-g")
+        && let Some((tag, n)) = tag_with_count.rsplit_once('-')
+        && n.parse::<u64>().is_ok()
+    {
+        format!("v{tag}")
+    } else {
+        describe_output.clone()
+    };
+
+    let base_tag_version = base_tag.strip_prefix('v').unwrap_or(&base_tag).to_string();
+
+    let prev_stable = previous_stable_tag(kernel_tree, &base_tag)?;
+
+    debug!(
+        "Ancestry context: describe='{}' base_tag='{}' base_version='{}' prev_stable='{}'",
+        describe_output, base_tag, base_tag_version, prev_stable
+    );
+
+    let rev_list_range = format!("{}..{}", prev_stable, git_sha);
+    let rev_list_output = run_command(
+        "git",
+        &["rev-list", &rev_list_range],
+        Some(&kernel_tree_str),
+    )?;
+
+    let ancestor_set: HashSet<String> = rev_list_output
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect();
+
+    debug!(
+        "Ancestry context: {} commits in rev-list {}..{}",
+        ancestor_set.len(),
+        prev_stable,
+        short_sha(git_sha)
+    );
+
+    Ok(AncestryWindow {
+        base_tag_version,
+        ancestor_set,
+    })
+}
+
 /// Wrapper for is_ancestor() so we can get some debugging output easier.
-fn do_is_ancestor(first: &Kernel, second: &Kernel) -> bool {
+fn do_is_ancestor(first: &Kernel, second: &Kernel, ctx: &AncestryWindow) -> bool {
     // "Fast" hack for doing a `git merge-base --is-ancestor first second`
     //
     // We "know" how our tree works, so we can rely on major versions and the like to do a few
@@ -218,20 +321,39 @@ fn do_is_ancestor(first: &Kernel, second: &Kernel) -> bool {
     // If both majors are the same, we can do a simple compare
     // Note, this can be slow for when these are both in a major kernel release.
     if first.version_major_match(second) && first < second {
+        debug!("    [fast path] major match, {} < {}", first.version(), second.version());
         return true;
     }
 
     // If this is a "mainline" release, than any kernel version larger than it is part of the graph
-    if first.is_mainline() {
-        return first < second;
+    if first.is_mainline() && first < second {
+        // Check for ambiguity: commit base is v6.11-rc2, included in release
+        // v6.12 (verhaal.db release column), fix is released v6.11 (verhaal.db),
+        // but lay somewhere in the v6.11-rc* development cycle.
+        // Commit may predate the fix: check window.
+        if compare_kernel_versions(&first.version(), &ctx.base_tag_version)
+            == std::cmp::Ordering::Greater
+        {
+            let in_ancestry = ctx.ancestor_set.contains(&first.git_id());
+            debug!(
+                "    [ambiguous path] fix {} > base_tag {}, fix_sha {} in ancestry: {}",
+                first.version(),
+                ctx.base_tag_version,
+                short_sha(&first.git_id()),
+                in_ancestry
+            );
+            return in_ancestry;
+        }
+        debug!("    [fast path] mainline {} < {}", first.version(), second.version());
+        return true;
     }
 
     false
 }
 
 /// determine if the first kernel is an ancestor of the second
-fn is_ancestor(first: &Kernel, second: &Kernel) -> bool {
-    let result = do_is_ancestor(first, second);
+fn is_ancestor(first: &Kernel, second: &Kernel, ctx: &AncestryWindow) -> bool {
+    let result = do_is_ancestor(first, second, ctx);
 
     if result {
         debug!(
@@ -252,7 +374,7 @@ fn is_ancestor(first: &Kernel, second: &Kernel) -> bool {
     result
 }
 
-fn print_unfixed_cves(dyad_records: &Vec<DyadRecord>, test_kernel: &Kernel) {
+fn print_unfixed_cves(dyad_records: &Vec<DyadRecord>, test_kernel: &Kernel, ctx: &AncestryWindow) {
     let mut total_vulnerable = 0;
 
     for dyad_record in dyad_records {
@@ -264,7 +386,7 @@ fn print_unfixed_cves(dyad_records: &Vec<DyadRecord>, test_kernel: &Kernel) {
             let vuln = &dyad.vulnerable;
             let fixed = &dyad.fixed;
 
-            if is_ancestor(vuln, test_kernel) {
+            if is_ancestor(vuln, test_kernel, ctx) {
                 // The vulnerable kernel is a root of our kernel, so we must determine if this is fixed or not.
                 must_look = true;
 
@@ -274,7 +396,7 @@ fn print_unfixed_cves(dyad_records: &Vec<DyadRecord>, test_kernel: &Kernel) {
                 }
 
                 // Check if the fixed git is a root of our test id
-                if is_ancestor(fixed, test_kernel) {
+                if is_ancestor(fixed, test_kernel, ctx) {
                     found_fix = true;
                 }
             }
@@ -371,8 +493,11 @@ fn main() -> Result<()> {
             }
         };
 
+        // Build ancestry context in case of ambiguous history
+        let ctx = build_ancestry_context(&kernel_tree, &git_full_sha)?;
+
         // Find all unfixed CVEs for a specific version
-        print_unfixed_cves(&dyads, &test_kernel);
+        print_unfixed_cves(&dyads, &test_kernel, &ctx);
         return Ok(());
     }
 
