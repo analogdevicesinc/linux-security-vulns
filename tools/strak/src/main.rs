@@ -319,10 +319,24 @@ fn do_is_ancestor(first: &Kernel, second: &Kernel, ctx: &AncestryWindow) -> bool
     }
 
     // If both majors are the same, we can do a simple compare
-    // Note, this can be slow for when these are both in a major kernel release.
-    if first.version_major_match(second) && first < second {
-        debug!("    [fast path] major match, {} < {}", first.version(), second.version());
-        return true;
+    // Uses the hash set that contains all reachable commits from the previous stable commit up
+    // to the commit under the test to quick check if is ancestor.
+    if first.version_major_match(second) {
+        if first.version() == second.version() {
+            let in_ancestry = ctx.ancestor_set.contains(&first.git_id());
+            debug!(
+                "    [ancestor set] same version {}, sha {} in ancestry: {}",
+                first.version(),
+                short_sha(&first.git_id()),
+                in_ancestry
+            );
+            return in_ancestry;
+        }
+        if first < second {
+            debug!("    [fast path] major match, {} < {}", first.version(), second.version());
+            return true;
+        }
+        return false;
     }
 
     // If this is a "mainline" release, than any kernel version larger than it is part of the graph
