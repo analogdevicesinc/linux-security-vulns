@@ -60,3 +60,76 @@ fn positional_arg_known_tag() {
         .success()
         .stdout(predicate::str::contains("vulnerable"));
 }
+
+#[test]
+fn cve_tag_not_vulnerable() {
+    let mut cmd = Command::new(cargo::cargo_bin!("strak"));
+
+    cmd.arg("v6.12")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("is vulnerable to CVE-2024-43884").not());
+}
+
+// The cve_* tests are against the live tree and may silently change the expected result
+// if the referenced CVE's dyad changes. In the case of suddenly breakage, verify if
+// the expected result still stands through git:
+//   git merge-base --is-ancestor <fix> <target> ; echo $?
+// and look at the dyad history, before inspecting the codebase.
+
+// CVE-2024-46869: vulnerable 6.10 (6e65a09f92) -> 6.12 (7ffaa20025)
+#[test]
+fn cve_tag_not_vulnerable_fix_in_major_release() {
+    let mut cmd = Command::new(cargo::cargo_bin!("strak"));
+    cmd.arg("v6.12")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("is vulnerable to CVE-2024-46869").not());
+}
+
+/// Commit based on v6.11-rc2, merged into v6.12.
+const TOPIC_BRANCH_COMMIT: &str = "bbf3c7ff9dfa45be51500d23a1276991a7cd8c6e";
+
+/// CVE-2024-43884: vulnerable v4.3->v6.11-rc5
+#[test]
+fn cve_fix_not_in_history() {
+    let mut cmd = Command::new(cargo::cargo_bin!("strak"));
+
+    cmd.arg(TOPIC_BRANCH_COMMIT)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("is vulnerable to CVE-2024-43884"));
+}
+
+/// CVE-2024-46823: vulnerable v6.8->v6.11-rc4
+#[test]
+fn cve_fix_not_in_history_2() {
+    let mut cmd = Command::new(cargo::cargo_bin!("strak"));
+
+    cmd.arg(TOPIC_BRANCH_COMMIT)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("is vulnerable to CVE-2024-46823"));
+}
+
+/// CVE-2024-26600: vulnerable v3.7->v6.8.
+#[test]
+fn cve_fix_in_history() {
+    let mut cmd = Command::new(cargo::cargo_bin!("strak"));
+
+    cmd.arg(TOPIC_BRANCH_COMMIT)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("is vulnerable to CVE-2024-26600").not());
+}
+
+/// CVE-2024-50084: vulnerable from v6.11-rc7
+#[test]
+fn cve_newer_than_commit() {
+    let mut cmd = Command::new(cargo::cargo_bin!("strak"));
+
+    cmd.arg(TOPIC_BRANCH_COMMIT)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("is vulnerable to CVE-2024-50084").not());
+}
