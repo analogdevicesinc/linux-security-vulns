@@ -90,7 +90,9 @@ jobs:
         # 6.12.0-rc7-v8-16k+         v6.12-rc7
         # 6.12.0-rc7-gc8d83c0ff29a   v6.12-rc7
         tag=$(echo "$kernel_release" | sed -E 's/^([0-9]+\.[0-9]+(\.[0-9]+)?(-rc[0-9]+)?).*/\1/; s/\.0($|-rc)/\1/; s/^/v/')
-        cc_files="$(find raw -name compile_commands.json)"
+        cc_files="$(find raw -name sbom.spdx.json)"
+        [ -n "$cc_files" ] || cc_files="$(find raw -name sbom.cdx.json)"
+        [ -n "$cc_files" ] || cc_files="$(find raw -name compile_commands.json)"
 
         echo "tag=$tag">> "$GITHUB_ENV"
         echo "cc_files<<EOF" >> $GITHUB_ENV
