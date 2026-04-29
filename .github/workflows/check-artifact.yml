@@ -75,9 +75,12 @@ jobs:
 
         source ci/download_artifacts.sh
 
-        download_artifacts "${{ inputs.ref }}" "${{ inputs.repository }}"
+        download_artifacts "${{ inputs.ref }}" "${{ inputs.repository }}" "true"
 
-        source $(find raw -name context.txt | head -1)
+        context="$(find raw -name context.txt | head -1)"
+        [[ -n "$context" ]] || { echo "::error ::get-articats: failed to find context.txt" ; exit 1 ; }
+
+        source "$context"
         # Adapt fine version with upstream tag
         # Build                      Upstream
         # 6.12.77+                   v6.12.77
