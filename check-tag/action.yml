@@ -24,6 +24,7 @@ runs:
         restore-keys: linux-security-vulns-
         path: |
           vulns/tools/target/release/strak
+          vulns/tools/target/release/grondig
           vulns/tools/verhaal/verhaal.db
           cve-files.db
           dyads.db
@@ -53,7 +54,7 @@ runs:
 
         get_file get-cve-list.sh
 
-        chmod +x vulns/tools/target/release/strak
+        chmod +x vulns/tools/target/release/grondig
 
         cve_all=$(mktemp)
         source ./get-cve-list.sh

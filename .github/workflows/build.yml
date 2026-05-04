@@ -43,6 +43,7 @@ jobs:
         key: linux-security-vulns-${{ github.run_id }}
         path: |
           vulns/tools/target/release/strak
+          vulns/tools/target/release/grondig
           vulns/tools/verhaal/verhaal.db
           cve-files.db
           dyads.db

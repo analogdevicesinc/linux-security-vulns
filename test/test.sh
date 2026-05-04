@@ -9,6 +9,7 @@ source ./build-cve-db.sh
 mkdir -p build ; cd $_
 
 build-cve-db
+run-tests
 
 python3 ../build-cve-files-db.py
 python3 ../build-dyads-db.py
