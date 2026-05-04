@@ -97,7 +97,18 @@ jobs:
         [ -n "$cc_files" ] || cc_files="$(find raw -name sbom.cdx.json)"
         [ -n "$cc_files" ] || cc_files="$(find raw -name compile_commands.json)"
 
+        # Since it is the same ref, the cherry-pick list is the same for all SBOM.
+        cherry_picks=""
+        sbom_file=$(find raw -name sbom.spdx.json | head -1)
+        if [ -n "$sbom_file" ]; then
+          cherry_picks=$(jq -r '[.["@graph"][]? | .extension[]? | select(.type == "extension_CdxPropertiesExtension") | .extension_cdxProperty[]? | select(.extension_cdxPropName == "git:cherry-pick") | .extension_cdxPropValue] | join(",")' "$sbom_file")
+        else
+          sbom_file=$(find raw -name sbom.cdx.json | head -1)
+          [ -n "$sbom_file" ] && cherry_picks=$(jq -r '[.metadata.component.pedigree.commits[]?.uid // empty] | join(",")' "$sbom_file")
+        fi
+
         echo "tag=$tag">> "$GITHUB_ENV"
+        echo "cherry_picks=$cherry_picks" >> "$GITHUB_ENV"
         echo "cc_files<<EOF" >> $GITHUB_ENV
         echo "$cc_files" >> "$GITHUB_ENV"
         echo "EOF" >> $GITHUB_ENV
@@ -106,6 +117,7 @@ jobs:
       id: check
       with:
         tag: ${{ env.tag }}
+        cherry-picks: ${{ env.cherry_picks }}
 
     - name: Check artifacts
       run: |

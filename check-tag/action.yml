@@ -5,6 +5,9 @@ inputs:
   tag:
     description: "Kernel version tag"
     default: ''
+  cherry-picks:
+    description: "Cherry picked commits"
+    default: ''
   gh-token:
     description: "GitHub Token"
     default: ${{ github.token }}
@@ -59,7 +62,8 @@ runs:
         cve_all=$(mktemp)
         source ./get-cve-list.sh
 
-        get-cve-list "${{ inputs.tag }}" "$cve_all"
+        cherry_picks="${{ inputs.cherry-picks }}"
+        get-cve-list "${{ inputs.tag }}" "$cve_all" "$cherry_picks"
 
         echo "cves=$(cat $cve_all)">> $GITHUB_OUTPUT
         rm "$cve_all"
