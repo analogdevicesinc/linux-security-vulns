@@ -351,6 +351,23 @@ impl Verhaal {
         Ok(result)
     }
 
+    /// Returns the mainline commit id for a given sha.
+    ///
+    /// For stable backport commits, returns the mainline_id column.
+    /// If not found, returns the sha as-is.
+    pub fn get_mainline_id(&self, sha: &str) -> String {
+        let mainline_id = query_string(
+            &self.conn,
+            "SELECT COALESCE(NULLIF(mainline_id, ''), id) FROM commits WHERE id LIKE ?1 || '%'",
+            &[&sha as &dyn ToSql],
+        );
+        if mainline_id.is_empty() {
+            sha.to_string()
+        } else {
+            mainline_id
+        }
+    }
+
     // Helper function to get the path to the database
     // Logic taken from dyad source
     fn lookup_verhaal_database_file() -> String {
