@@ -93,17 +93,17 @@ jobs:
         # 6.12.0-rc7-v8-16k+         v6.12-rc7
         # 6.12.0-rc7-gc8d83c0ff29a   v6.12-rc7
         tag=$(echo "$kernel_release" | sed -E 's/^([0-9]+\.[0-9]+(\.[0-9]+)?(-rc[0-9]+)?).*/\1/; s/\.0($|-rc)/\1/; s/^/v/')
-        cc_files="$(find raw -name sbom.spdx.json)"
-        [ -n "$cc_files" ] || cc_files="$(find raw -name sbom.cdx.json)"
+        cc_files="$(find raw -name sbom.spdx30.json)"
+        [ -n "$cc_files" ] || cc_files="$(find raw -name sbom.cdx17.json)"
         [ -n "$cc_files" ] || cc_files="$(find raw -name compile_commands.json)"
 
         # Since it is the same ref, the cherry-pick list is the same for all SBOM.
         cherry_picks=""
-        sbom_file=$(find raw -name sbom.spdx.json | head -1)
+        sbom_file=$(find raw -name sbom.spdx30.json | head -1)
         if [ -n "$sbom_file" ]; then
           cherry_picks=$(jq -r '[.["@graph"][]? | .extension[]? | select(.type == "extension_CdxPropertiesExtension") | .extension_cdxProperty[]? | select(.extension_cdxPropName == "git:cherry-pick") | .extension_cdxPropValue] | join(",")' "$sbom_file")
         else
-          sbom_file=$(find raw -name sbom.cdx.json | head -1)
+          sbom_file=$(find raw -name sbom.cdx17.json | head -1)
           [ -n "$sbom_file" ] && cherry_picks=$(jq -r '[.metadata.component.pedigree.commits[]?.uid // empty] | join(",")' "$sbom_file")
         fi
 
