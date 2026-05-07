@@ -62,7 +62,7 @@ jobs:
 
         get_file () {
           curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o $1 \
-              https://raw.githubusercontent.com/analogdevicesinc/linux/ci-adapter/$1
+              https://raw.githubusercontent.com/analogdevicesinc/linux/ci/$1
         }
 
         mkdir -p ci
