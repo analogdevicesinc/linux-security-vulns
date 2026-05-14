@@ -24,14 +24,23 @@ jobs:
       contents: read
 
     steps:
-    - uses: analogdevicesinc/linux-security-vulns/check-tag@ci
+    - name: Build request
+      id: build
+      run: |
+        request=$(jq -cn \
+            --arg tag "${{ inputs.tag }}" \
+            '{ ($tag): { "stable-tag": $tag, "cherry-picked": [], "compiled-files": [] } }')
+        echo "request=$request" >> $GITHUB_OUTPUT
+
+    - uses: analogdevicesinc/linux-security-vulns/check@ci
       id: check
       with:
-        tag: ${{ inputs.tag }}
+        request: ${{ steps.build.outputs.request }}
 
     - name: Create summary
       run: |
-        cves='${{ steps.check.outputs.cves }}'
+        result='${{ steps.check.outputs.result }}'
+        cves=$(echo "$result" | jq --arg tag "${{ inputs.tag }}" '.[$tag].cves')
         len=$(echo "$cves" | jq length)
 
         echo "## CVEs in ${{ inputs.tag }}: $len" >> $GITHUB_STEP_SUMMARY

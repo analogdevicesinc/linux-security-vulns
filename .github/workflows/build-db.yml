@@ -1,0 +1,69 @@
+name: Build CVE database
+run-name: Build auxiliary vulnerabilities database
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Sparse checkout vulns CVE data
+      run: |
+        git clone --filter=blob:none --no-checkout --depth 1 \
+          https://git.kernel.org/pub/scm/linux/security/vulns.git .
+        git sparse-checkout init
+        git sparse-checkout set cve
+        git checkout
+
+    - name: Get assets
+      run: |
+        curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -L -o github-api.sh \
+          https://raw.githubusercontent.com/analogdevicesinc/doctools/refs/heads/main/ci/github-api.sh
+
+        curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -L -o build-post-db.py \
+          https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/refs/heads/ci/build-post-db.py
+
+    - name: Build post.db
+      run: |
+        python3 build-post-db.py
+        xz --compress post.db
+
+    - name: Get latest vars
+      run: |
+        source ./github-api.sh
+        release_id=$(
+          gh-get-release-id ${{ secrets.GITHUB_TOKEN }} \
+                            ${{ github.repository }} \
+                            latest \
+                            latest_id
+        )
+
+        asset_id=$(
+          gh-get-asset-id ${{ secrets.GITHUB_TOKEN }} \
+                          ${{ github.repository }} \
+                          $release_id \
+                          post.db.xz \
+                          latest_asset_id
+        )
+
+    - name: GitHub Upload latest asset
+      run: |
+        source ./github-api.sh
+        if [[ ! "$latest_asset_id" == "" ]]; then
+          gh-delete-asset ${{ secrets.GITHUB_TOKEN }} \
+                          ${{ github.repository }} \
+                          $latest_asset_id
+        fi
+
+        gh-upload-asset ${{ secrets.GITHUB_TOKEN }} \
+                        ${{ github.repository }} \
+                        $latest_id \
+                        post.db.xz \
+                        post.db.xz

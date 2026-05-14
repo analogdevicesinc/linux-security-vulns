@@ -1,0 +1,48 @@
+name: Check CVEs
+description: Run grondig
+
+inputs:
+  request:
+    description: "query entries in json"
+    required: true
+  gh-token:
+    description: "GitHub Token"
+    default: ${{ github.token }}
+
+outputs:
+  result:
+    description: 'list of cves per uid, in json'
+    value: ${{ steps.check.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - name: Get tools and databases
+      shell: bash
+      run: |
+        curl -sL -H "Authorization: Bearer ${{ inputs.gh-token }}" -o verhaal.db.xz \
+            https://github.com/sashalevin/verhaal/releases/download/db-latest/verhaal.db.xz
+        xz --decompress verhaal.db.xz
+
+        curl -sL -H "Authorization: Bearer ${{ inputs.gh-token }}" -o post.db.xz \
+            https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest/post.db.xz
+        xz --decompress post.db.xz
+
+        curl -sL -H "Authorization: Bearer ${{ inputs.gh-token }}" -o grondig \
+            https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest/grondig
+        chmod +x grondig
+
+    - name: Check
+      id: check
+      shell: bash
+      run: |
+        [[ "${{ runner.debug }}" == "1" ]] && set -x
+
+        result=$(printf '%s' '${{ inputs.request }}' | \
+            ./grondig --post-db ./post.db --verhaal-db ./verhaal.db)
+
+        echo "$result"
+
+        echo 'result<<EOF' >> $GITHUB_OUTPUT
+        echo "$result" >> $GITHUB_OUTPUT
+        echo 'EOF' >> $GITHUB_OUTPUT

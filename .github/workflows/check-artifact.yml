@@ -97,7 +97,7 @@ jobs:
         [ -n "$cc_files" ] || cc_files="$(find raw -name sbom.cdx17.json)"
         [ -n "$cc_files" ] || cc_files="$(find raw -name compile_commands.json)"
 
-        # Since it is the same ref, the cherry-pick list is the same for all SBOM.
+        # Since it is the same ref, the cherry-pick list is the same for all SBOMs.
         cherry_picks=""
         sbom_file=$(find raw -name sbom.spdx30.json | head -1)
         if [ -n "$sbom_file" ]; then
@@ -107,53 +107,55 @@ jobs:
           [ -n "$sbom_file" ] && cherry_picks=$(jq -r '[.metadata.component.pedigree.commits[]?.uid // empty] | join(",")' "$sbom_file")
         fi
 
-        echo "tag=$tag">> "$GITHUB_ENV"
+        echo "tag=$tag" >> "$GITHUB_ENV"
         echo "cherry_picks=$cherry_picks" >> "$GITHUB_ENV"
         echo "cc_files<<EOF" >> $GITHUB_ENV
         echo "$cc_files" >> "$GITHUB_ENV"
         echo "EOF" >> $GITHUB_ENV
 
-    - uses: analogdevicesinc/linux-security-vulns/check-tag@ci
-      id: check
-      with:
-        tag: ${{ env.tag }}
-        cherry-picks: ${{ env.cherry_picks }}
-
-    - name: Check artifacts
+    - name: Build request
+      id: build
       run: |
         [[ "${{ runner.debug }}" == "1" ]] && set -x
-        cve_all=$(mktemp)
-        echo '${{ steps.check.outputs.cves }}' > $cve_all
 
-        get_file () {
-          curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o $1 \
-              https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/ci/$1
-        }
+        curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o build-grondig-request.py \
+            https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/ci/build-grondig-request.py
 
-        get_file filter-cve-list.py
+        request=$(echo "$cc_files" | python3 build-grondig-request.py \
+            --tag "$tag" \
+            --cherry-picks "$cherry_picks")
+
+        {
+          echo "request<<EOF"
+          echo "$request"
+          echo "EOF"
+        } >> $GITHUB_OUTPUT
+
+    - uses: analogdevicesinc/linux-security-vulns/check@ci
+      id: check
+      with:
+        request: ${{ steps.build.outputs.request }}
+
+    - name: Create summary
+      run: |
+        [[ "${{ runner.debug }}" == "1" ]] && set -x
+
+        result='${{ steps.check.outputs.result }}'
 
         echo "## CVEs in $tag per defconfig" >> $GITHUB_STEP_SUMMARY
+        echo "$result" | jq -c 'to_entries[]' | while IFS= read -r entry; do
+          file=$(echo "$entry" | jq -r '.key')
+          cves=$(echo "$entry" | jq -c '.value.cves')
+          len=$(echo "$cves" | jq length)
 
-        while IFS= read -r file; do
-          [[ -n "$file" ]] || continue
-
-          cve_out=$(mktemp)
-          python3 filter-cve-list.py "$file" "$cve_all" "$cve_out"
-
-          len=$(cat "$cve_out" | jq length)
           echo "### $file: $len" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| | | | | | |" >> $GITHUB_STEP_SUMMARY
           echo "|-|-|-|-|-|-|" >> $GITHUB_STEP_SUMMARY
-          cat "$cve_out" | jq -r '
+          echo "$cves" | jq -r '
             . as $in |
             range(0; length; 6) |
             $in[.:.+6] |
-            "| " + (map(.) | join(" | ")) + " |"' >> $GITHUB_STEP_SUMMARY
+            "| " + join(" | ") + " |"' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-
-          rm "$cve_out"
-        done <<< "$cc_files"
-
-
-        rm "$cve_all"
+        done
