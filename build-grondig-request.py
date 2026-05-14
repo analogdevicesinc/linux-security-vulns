@@ -33,6 +33,18 @@ def files_from_spdx(data):
     ]
 
 
+def _is_kernelsom_source(data):
+    # https://github.com/TNG/KernelSbom
+    return any(
+        e.get("type") == "SoftwareAgent" and e.get("name") == "KernelSbom"
+        for e in data.get("@graph", [])
+    )
+
+
+def files_from_kernelsom_source(data):
+    return files_from_spdx(data)
+
+
 def files_from_compile_commands(data):
     src_root = next(
         (e["file"][: -len("init/main.c")] for e in data if e["file"].endswith("/init/main.c")),
@@ -66,6 +78,8 @@ def main():
 
         if isinstance(data, dict) and data.get("bomFormat") == "CycloneDX":
             files = files_from_cdx(data)
+        elif isinstance(data, dict) and "@graph" in data and _is_kernelsom_source(data):
+            files = files_from_kernelsom_source(data)
         elif isinstance(data, dict) and "@graph" in data:
             files = files_from_spdx(data)
         elif isinstance(data, list):

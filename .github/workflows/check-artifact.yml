@@ -94,7 +94,6 @@ jobs:
         # 6.12.0-rc7-gc8d83c0ff29a   v6.12-rc7
         tag=$(echo "$kernel_release" | sed -E 's/^([0-9]+\.[0-9]+(\.[0-9]+)?(-rc[0-9]+)?).*/\1/; s/\.0($|-rc)/\1/; s/^/v/')
         cc_files="$(find raw -name sbom.spdx30.json)"
-        [ -n "$cc_files" ] || cc_files="$(find raw -name sbom.cdx17.json)"
         [ -n "$cc_files" ] || cc_files="$(find raw -name compile_commands.json)"
 
         # Since it is the same ref, the cherry-pick list is the same for all SBOMs.
