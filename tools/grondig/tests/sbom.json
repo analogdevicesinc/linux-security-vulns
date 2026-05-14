@@ -1,0 +1,55 @@
+{
+  "@context": "https://spdx.org/rdf/3.0.1/spdx-context.jsonld",
+  "@graph": [
+    {
+      "type": "CreationInfo",
+      "spdxId": "_:creationinfo",
+      "specVersion": "3.0.1",
+      "created": "2024-01-01T00:00:00Z",
+      "createdBy": ["urn:example:tool/sbom-generator"]
+    },
+    {
+      "type": "SpdxDocument",
+      "spdxId": "urn:example:linux@0000000000000000000000000000000000000001/document",
+      "creationInfo": "_:creationinfo",
+      "name": "Linux Kernel SBOM (test fixture)",
+      "rootElement": ["urn:example:linux@0000000000000000000000000000000000000001/sbom"],
+      "profileConformance": ["core", "software"]
+    },
+    {
+      "type": "software_File",
+      "spdxId": "urn:example:linux@0000000000000000000000000000000000000001/file/src/0",
+      "creationInfo": "_:creationinfo",
+      "name": "fs/dcache.c",
+      "software_primaryPurpose": "source"
+    },
+    {
+      "type": "software_File",
+      "spdxId": "urn:example:linux@0000000000000000000000000000000000000001/file/src/1",
+      "creationInfo": "_:creationinfo",
+      "name": "kernel/sched/core.c",
+      "software_primaryPurpose": "source"
+    },
+    {
+      "type": "software_File",
+      "spdxId": "urn:example:linux@0000000000000000000000000000000000000001/file/src/2",
+      "creationInfo": "_:creationinfo",
+      "name": "mm/memory.c",
+      "software_primaryPurpose": "source"
+    },
+    {
+      "type": "software_File",
+      "spdxId": "urn:example:linux@0000000000000000000000000000000000000001/file/src/3",
+      "creationInfo": "_:creationinfo",
+      "name": "net/core/dev.c",
+      "software_primaryPurpose": "source"
+    },
+    {
+      "type": "software_File",
+      "spdxId": "urn:example:linux@0000000000000000000000000000000000000001/file/src/4",
+      "creationInfo": "_:creationinfo",
+      "name": "drivers/usb/core/driver.c",
+      "software_primaryPurpose": "source"
+    }
+  ]
+}
