@@ -37,6 +37,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      result: ${{ steps.check.outputs.result }}
 
     steps:
     - uses: cloudsmith-io/cloudsmith-cli-action@v1.0.5
@@ -158,3 +160,27 @@ jobs:
             "| " + join(" | ") + " |"' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
         done
+
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    needs: check
+    steps:
+    - uses: analogdevicesinc/doctools/blank@action
+
+    - name: Sync
+      env:
+        result: ${{ needs.check.outputs.result }}
+      run: |
+        git fetch origin data:data
+        git switch data
+
+        ref="${{ inputs.ref }}"
+        ref=$(echo "$ref" | sed 's|/|-|g')
+        echo "$result" > "${ref}.json"
+
+        ls *.json | grep -v refs.json | jq -nR '[inputs]' > refs.json
+        git add .
+        git commit -m "deploy: ${{ inputs.ref }}" --allow-empty
+        git push origin HEAD:data
