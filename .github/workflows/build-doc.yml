@@ -2,7 +2,11 @@ on:
   push:
     branches:
       - ci
+    paths:
+      - 'docs/**'
   pull_request:
+    paths:
+      - 'docs/**'
 
 jobs:
   build-doc:
