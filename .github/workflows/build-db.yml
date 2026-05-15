@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
 
     steps:
     - name: Sparse checkout vulns CVE data
@@ -67,3 +68,20 @@ jobs:
                         $latest_id \
                         post.db.xz \
                         post.db.xz
+
+    - name: Delete stale cache
+      run: |
+        gh-delete-cache () {
+          local token=$1
+          local repo=$2
+          local key=$3
+          curl -sL -X DELETE \
+            -H "Authorization: Bearer $token" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/$repo/actions/caches?key=$key"
+        }
+
+        gh-delete-cache ${{ secrets.GITHUB_TOKEN }} \
+                        ${{ github.repository }} \
+                        linux-security-vulns
