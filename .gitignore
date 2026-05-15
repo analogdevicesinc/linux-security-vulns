@@ -1,3 +1,13 @@
 check
 build
 *.json
+dev_server.py
+_build
+__pycache__
+node_modules
+*.min.css
+*.min.css.map
+*.umd.js
+*.umd.js.map
+package-lock.json
+package.json

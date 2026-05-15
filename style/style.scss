@@ -1,0 +1,19 @@
+@use "variable";
+
+#stats {
+    .grid {
+        display: grid;
+        gap: .25em;
+        grid-template-columns: repeat(auto-fill, minmax(9em, 1fr));
+        font-family: monospace;
+        text-align: center;
+        font-size: 1.2em;
+        border-radius: variable.$border-radius;
+        border: 1px solid rgba(125,125,125,.25);
+        box-shadow: var(--subtle-box-shadow);
+
+        & > a {
+            padding: .5em 0;
+        }
+    }
+}

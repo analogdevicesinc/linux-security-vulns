@@ -1,0 +1,139 @@
+"use strict";
+
+import { WaitEvent } from '@shared/scripts/event.js'
+import { DOM } from '@shared/scripts/dom.js'
+
+class Stats {
+  constructor (app) {
+    this.$ = {}
+    this.parent = app
+
+    this.construct()
+
+    this.parent = app
+  }
+  render_vulns (results) {
+    let stats = DOM.get('#stats', this.$.body)
+    if (!stats)
+      return
+
+    for (const result of results) {
+      if (result.status !== 'fulfilled')
+        continue
+
+      let ref_entry = DOM.new('div')
+      let ref_title = DOM.new('h3', {
+        'className': 'title',
+      })
+      ref_title.innerText = result.value.file
+      ref_entry.append(ref_title)
+
+      for (const [key, value] of Object.entries(result.value.data)) {
+
+        let entry = DOM.new('div')
+        let blob_title = DOM.new('h4', {
+          'className': 'label',
+          'innerText': key
+        })
+        let cves_grid = DOM.new('div', {
+          'className': 'grid'
+        })
+
+
+        let blob_desc = DOM.new('p', {
+            'textContent': `Number of CVEs: ${value.cves.length}`
+          }
+        )
+        let cves = []
+        for (const cve of value.cves) {
+          cves.push(DOM.new('a', {
+            'className': 'entry',
+            'href': `https://nvd.nist.gov/vuln/detail/${cve}`,
+            'target': '_blank',
+            'textContent': cve
+          }))
+        }
+        cves_grid.append(...cves)
+        entry.append(blob_title)
+        entry.append(blob_desc)
+        entry.append(cves_grid)
+        ref_entry.append(entry)
+      }
+      ref_entry.append(DOM.new('hr'))
+      stats.append(ref_entry)
+    }
+  }
+  collect_vuls (obj, base_url) {
+    const requests = obj.map(file => {
+      const url = new URL(file, base_url)
+
+      return fetch(new Request(url))
+        .then(response => {
+          if (!response.ok)
+            throw new Error()
+          return response.json()
+        })
+        .then(data => ({
+          file,
+          data
+        }))
+    })
+
+    Promise.allSettled(requests)
+      .then(results => {
+        this.render_vulns(results)
+      })
+      .catch(err => {
+        console.error(err)
+      })
+  }
+  construct_vulns () {
+    const metadata = this.parent.state.metadata
+    const repository = this.parent.state.repository
+    let base_url = metadata.source_hostname_raw.replace('{repository}', repository)
+                              .replace('{branch}', 'data')
+                              .replace('{pathname}', '')
+
+    const response = fetch(
+      new Request(new URL('refs.json', base_url))
+    )
+      .then(response => response)
+      .then(response => {
+        if (!response.ok)
+          throw new Error();
+        return response.json()
+      })
+      .then(obj => this.collect_vuls(obj, base_url))
+      .catch(err => {})
+
+    window.addEventListener("app:hot_reload:page_loaded", () => {
+      this.construct_vulns()
+    })
+  }
+  construct () {
+    this.$.body = DOM.get('.body');
+
+    (async () => {
+      await WaitEvent(this.parent, 'fetch', "app:fetch:constructed")
+      this.parent.fetch.then(
+        this.construct_vulns.bind(this)
+      )
+    })();
+  }
+}
+
+const VulnsPage = () => {
+  let on_visible = () => {
+    new Stats(app)
+  }
+
+  if (document.visibilityState === 'visible')
+    on_visible()
+  else
+    window.addEventListener('focus', on_visible, { once: true })
+}
+
+(async () => {
+  await WaitEvent(window, 'app', "app:created")
+  VulnsPage()
+})()
