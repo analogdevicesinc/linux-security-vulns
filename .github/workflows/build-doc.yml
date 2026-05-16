@@ -1,3 +1,5 @@
+name: Build doc
+
 on:
   push:
     branches:
