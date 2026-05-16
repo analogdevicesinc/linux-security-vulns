@@ -13,7 +13,7 @@ Linux Security Vulns effort documentation.
 .. toctree::
    :hidden:
 
-   ci
+   architecture
 
 Known vulnerabilities
 ---------------------
