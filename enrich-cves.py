@@ -47,6 +47,13 @@ with zipfile.ZipFile(sys.argv[1]) as z:
             scores[cve] = None
             summaries[cve] = None
 
+if os.path.exists('scores.json'):
+    with open('scores.json') as f:
+        prev = json.load(f)
+    for cve, score in zip(prev['cve'], prev['cvss_score']):
+        if score is not None and scores.get(cve) is None:
+            scores[cve] = score
+
 need_nvd = [c for c in cves if scores[c] is None]
 with ThreadPoolExecutor(max_workers=WORKERS) as ex:
     futures = {ex.submit(nvd_score, c): c for c in need_nvd}
