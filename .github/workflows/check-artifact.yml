@@ -25,6 +25,8 @@ on:
         type: string
         default: 'adi/linux'
     secrets:
+      NVD_API_KEY:
+        required: false
       CLOUDSMITH_API_KEY:
         required: false
       CLOUDSMITH_SERVICE_SLUG:
@@ -196,6 +198,8 @@ jobs:
 
     - name: Build scores file
       # DEMO step, you should have a db table with the CVEs scores.
+      env:
+        NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
       run: |
         # Build scores file
         enrich_cves=$(mktemp -t check.XXX.py)
