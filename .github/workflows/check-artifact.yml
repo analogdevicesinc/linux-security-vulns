@@ -40,6 +40,7 @@ jobs:
       contents: read
       id-token: write
     outputs:
+      sha: ${{ steps.get-artifacts.outputs.sha }}
       result: ${{ steps.check.outputs.result }}
 
     steps:
@@ -61,6 +62,7 @@ jobs:
         echo "CLOUDSMITH_API_KEY=$CLOUDSMITH_API_KEY" >> "$GITHUB_ENV"
 
     - name: Get artifacts
+      id: get-artifacts
       run: |
         [[ "${{ runner.debug }}" == "1" ]] && set -x
 
@@ -110,6 +112,7 @@ jobs:
           [ -n "$sbom_file" ] && cherry_picks=$(jq -r '[.metadata.component.pedigree.commits[]?.uid // empty] | join(",")' "$sbom_file")
         fi
 
+        echo "sha=$git_sha" >> "$GITHUB_OUTPUT"
         echo "tag=$tag" >> "$GITHUB_ENV"
         echo "cherry_picks=$cherry_picks" >> "$GITHUB_ENV"
         echo "cc_files<<EOF" >> $GITHUB_ENV
@@ -173,6 +176,7 @@ jobs:
 
     - name: Merge result
       env:
+        sha: ${{ needs.check.outputs.sha }}
         result: ${{ needs.check.outputs.result }}
       run: |
         git fetch origin data:data
@@ -180,7 +184,13 @@ jobs:
 
         ref="${{ inputs.ref }}"
         ref=$(echo "$ref" | sed 's|/|-|g')
-        echo "$result" > "${ref}.json"
+        jq -cn \
+          --arg ref "${{ inputs.ref }}" \
+          --arg sha "$sha" \
+          --arg modified "$(date -u +%Y-%m-%dT%H:%M:%S.%6NZ)" \
+          --argjson result "$result" \
+          '{"ref": $ref, "sha": $sha, "modified": $modified, "result": $result}' \
+          > "${ref}.json"
 
         ls *.json | grep -v refs.json | grep -v scores.json | jq -nR '[inputs]' > refs.json
 

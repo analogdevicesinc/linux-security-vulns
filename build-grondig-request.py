@@ -14,6 +14,8 @@ import argparse
 import json
 import sys
 
+from pathlib import Path
+
 
 def files_from_cdx(data):
     return [
@@ -88,7 +90,7 @@ def main():
             print(f"warning: {f}: unrecognised format", file=sys.stderr)
             continue
 
-        request[f] = {
+        request[Path(f).parent.name] = {
             "stable-tag":     args.tag,
             "cherry-picked":  cherry_picks,
             "compiled-files": files,
