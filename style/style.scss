@@ -18,3 +18,8 @@
         }
     }
 }
+
+/* polyfill < 0.4.42 */
+collapsible_input:checked ~ .collapsible_content {
+  padding: .5em .5em 0 .5em;
+}

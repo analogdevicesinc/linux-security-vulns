@@ -4,9 +4,13 @@ on:
       - ci
     paths:
       - 'docs/**'
+      - 'scripts/**'
+      - 'style/**'
   pull_request:
     paths:
       - 'docs/**'
+      - 'scripts/**'
+      - 'style/**'
 
 jobs:
   build-doc:
