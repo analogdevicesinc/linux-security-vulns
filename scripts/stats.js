@@ -13,7 +13,7 @@ class Stats {
     this.parent = app
   }
   render_vulns (results) {
-    let stats = DOM.get('#stats', this.$.body)
+    let stats = DOM.get('#security-stats', this.$.body)
     if (!stats)
       return
 
@@ -21,42 +21,95 @@ class Stats {
       if (result.status !== 'fulfilled')
         continue
 
-      let ref_entry = DOM.new('div')
-      let ref_title = DOM.new('h3', {
-        'className': 'title',
-      })
-      ref_title.innerText = result.value.file
-      ref_entry.append(ref_title)
+      let ref_entry = DOM.new('p')
+      const modified = new Date(result.value.data.modified).toUTCString()
+      const sha_url = this.parent.state.metadata.source_hostname
+                        .replace('{repository}', 'linux')
+                        .replace('{branch}', result.value.data.sha)
+                        .replace('{pathname}', '')
+      let sha_entry = DOM.new('span')
+      sha_entry.append(...[
+        DOM.new('span', { textContent: 'sha:' }),
+        DOM.new('a', {
+          className: 'icon git',
+          href: sha_url,
+          textContent: result.value.data.sha.substring(0, 12)
+        })
+      ])
+      ref_entry.append(...[
+        DOM.new('h3', {
+          className: 'title',
+          textContent: `ref: ${result.value.data.ref}`
+        }),
+        sha_entry,
+        DOM.new('div', {
+          textContent: `Last scan: ${modified}`
+        })
+      ])
 
-      for (const [key, value] of Object.entries(result.value.data)) {
+      for (const [key, value] of Object.entries(result.value.data.result)) {
 
-        let entry = DOM.new('div')
-        let blob_title = DOM.new('h4', {
-          'className': 'label',
-          'innerText': key
+        let entry = DOM.new('div', {
+          className: 'collapsible',
+        })
+
+        let label = DOM.new('label', {
+          htmlFor: `${result.value.data.ref}-${key}`,
+        })
+        let label_header = DOM.new('div')
+        label_header.append(...[
+          DOM.new('div', {
+            textContent: key
+          }),
+          DOM.new('p', {
+            textContent: `${value.cves.length} vulnerabilities`
+          })
+        ])
+        label.append(...[
+          label_header,
+          DOM.new('div', { className: 'icon' })
+        ])
+        entry.append(...[
+          DOM.new('input', {
+            className: 'collapsible_input',
+            id: `${result.value.data.ref}-${key}`,
+            name: `${result.value.data.ref}-${key}`,
+            type: 'checkbox',
+          }),
+          label
+        ])
+        let collapsible_content = DOM.new('div', {
+          className: 'collapsible_content'
         })
         let cves_grid = DOM.new('div', {
-          'className': 'grid'
+          className: 'grid'
         })
+        let artifact_download = DOM.new('p')
+        artifact_download.append(...[
+          DOM.new('span', { textContent: 'Download:' }),
+          DOM.new('a', {
+            className: 'icon download',
+            href: `https://dl.cloudsmith.io/public/adi/linux/raw/versions/${result.value.data.sha}/${key}`,
+            target: '_blank',
+            textContent: `${result.value.data.sha}/${key}`
+          })
+        ])
+        collapsible_content.append(...[
+          artifact_download,
+          cves_grid
+        ])
 
-
-        let blob_desc = DOM.new('p', {
-            'textContent': `Number of CVEs: ${value.cves.length}`
-          }
-        )
         let cves = []
         for (const cve of value.cves) {
           cves.push(DOM.new('a', {
-            'className': 'entry',
-            'href': `https://nvd.nist.gov/vuln/detail/${cve}`,
-            'target': '_blank',
-            'textContent': cve
+            className: 'entry',
+            href: `https://nvd.nist.gov/vuln/detail/${cve}`,
+            target: '_blank',
+            textContent: cve
           }))
         }
         cves_grid.append(...cves)
-        entry.append(blob_title)
-        entry.append(blob_desc)
-        entry.append(cves_grid)
+        entry.append(collapsible_content)
         ref_entry.append(entry)
       }
       ref_entry.append(DOM.new('hr'))

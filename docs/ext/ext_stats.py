@@ -19,9 +19,8 @@ class DirectiveStats(Directive):
 
     def run(self):
         set_classes(self.options)
-        section = nodes.section(ids=["stats"])
-        content = nodes.paragraph(text=self.content)
-        section += content
+        section = nodes.section(ids=["security-stats"])
+        section += nodes.paragraph()
 
         return [section]
 

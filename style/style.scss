@@ -1,6 +1,6 @@
 @use "variable";
 
-#stats {
+#security-stats {
     .grid {
         display: grid;
         gap: .25em;
@@ -11,6 +11,7 @@
         border-radius: variable.$border-radius;
         border: 1px solid rgba(125,125,125,.25);
         box-shadow: var(--subtle-box-shadow);
+        padding-bottom: .5em;
 
         & > a {
             padding: .5em 0;
