@@ -31,6 +31,11 @@ on:
         required: false
       CLOUDSMITH_SERVICE_SLUG:
         required: false
+    outputs:
+      sha:
+        value: ${{ jobs.check.outputs.sha }}
+      result:
+        value: ${{ jobs.check.outputs.result }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -166,55 +171,4 @@ jobs:
             $in[.:.+6] |
             "| " + join(" | ") + " |"' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-        done
-
-  enrich-deploy:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    needs: check
-    steps:
-    - uses: analogdevicesinc/doctools/blank@action
-
-    - name: Merge result
-      env:
-        sha: ${{ needs.check.outputs.sha }}
-        result: ${{ needs.check.outputs.result }}
-      run: |
-        git fetch origin data:data
-        git switch data
-
-        ref="${{ inputs.ref }}"
-        ref=$(echo "$ref" | sed 's|/|-|g')
-        jq -cn \
-          --arg ref "${{ inputs.ref }}" \
-          --arg sha "$sha" \
-          --arg modified "$(date -u +%Y-%m-%dT%H:%M:%S.%6NZ)" \
-          --argjson result "$result" \
-          '{"ref": $ref, "sha": $sha, "modified": $modified, "result": $result}' \
-          > "${ref}.json"
-
-        ls *.json | grep -v refs.json | grep -v scores.json | jq -nR '[inputs]' > refs.json
-
-    - name: Build scores file
-      # DEMO step, you should have a db table with the CVEs scores.
-      env:
-        NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-      run: |
-        # Build scores file
-        enrich_cves=$(mktemp -t check.XXX.py)
-        all_zip=$(mktemp -t all.XXX.zip)
-        curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o "$enrich_cves" \
-            https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/ci/enrich-cves.py
-        curl -sL -o "$all_zip" \
-          "https://storage.googleapis.com/osv-vulnerabilities/Linux/all.zip"
-        python3 "$enrich_cves" "$all_zip"
-        rm "$enrich_cves" "$all_zip"
-
-    - name: Deploy
-      run: |
-        git add .
-        git commit -m "deploy: ${{ inputs.ref }}" --allow-empty
-        while ! git push origin HEAD:data ; do
-          git pull origin data --rebase
         done
