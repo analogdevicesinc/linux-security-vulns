@@ -157,8 +157,9 @@ pipelines split in two groups, the build pipelines:</p>
   Linux Kernel ─────────►│verhaal.db├──┬──► Daily
  (all history)           └──────────┘  │
                          ┌───────┐     │
-Vulns CVE data ─────────►│post.db├─────┘
-                         └───────┘
+Vulns CVE data ────┬────►│post.db├─────┘
+                   │     └───────┘
+    verhaal.db ────┘
                          ┌───────┐
    Source code ─────────►│grondig├────────► On changes
                          └───────┘
@@ -167,11 +168,9 @@ Vulns CVE data ─────────►│post.db├─────┘
 <p>And check pipelines:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>       Input        |  Tool       |  Output
 
-       verhaal.db ──┐
-                    │
-                    │  ┌───────┐
-          post.db ──┼─►│grondig├───► Vulnerabilities
-                    │  └───────┘     (matched CVEs)
+                         ┌───────┐
+          post.db ──────►│grondig├───► Vulnerabilities
+                    ┌───►└───────┘     (matched CVEs)
                     │
 ┌────────────────┐  │
 │Query:          │  │
@@ -452,8 +451,12 @@ a SHA1 correction map for malformed <code class="docutils literal notranslate"><
 <section id="post-db">
 <h3><code class="docutils literal notranslate"><span class="pre">post.db</span></code><a class="headerlink" href="#post-db" title="Link to this heading"></a></h3>
 <p>Correlates CVEs with affected source files and with their vulnerable/fix
-commits.</p>
-<p>Data source: <a class="icon link reference external" href="https://git.kernel.org/pub/scm/linux/security/vulns.git/tree/cve" target="_blank">https://git.kernel.org/pub/scm/linux/security/vulns.git/tree/cve</a></p>
+commits, and a filtered subset of <code class="docutils literal notranslate"><span class="pre">verhaal.db</span></code> commit metadata.</p>
+<p>Data sources:</p>
+<ul class="simple">
+<li><p><a class="icon link reference external" href="https://git.kernel.org/pub/scm/linux/security/vulns.git/tree/cve" target="_blank">https://git.kernel.org/pub/scm/linux/security/vulns.git/tree/cve</a></p></li>
+<li><p><a class="icon link reference external" href="https://github.com/sashalevin/verhaal/releases/download/db-latest/verhaal.db.xz" target="_blank">https://github.com/sashalevin/verhaal/releases/download/db-latest/verhaal.db.xz</a></p></li>
+</ul>
 <p>Database tables:</p>
 <div class="table-wrapper colwidths-given docutils container" id="id8">
 <table class="docutils align-default" id="id8">
@@ -483,7 +486,7 @@ commits.</p>
 </div>
 <div class="table-wrapper colwidths-given docutils container" id="id9">
 <table class="docutils align-default" id="id9">
-<caption><span class="caption-text">sha</span><a class="headerlink" href="#id9" title="Link to this table"></a></caption>
+<caption><span class="caption-text">cves</span><a class="headerlink" href="#id9" title="Link to this table"></a></caption>
 <colgroup>
 <col style="width: 20.0%" />
 <col style="width: 15.0%" />
@@ -511,6 +514,40 @@ commits.</p>
 </tbody>
 </table>
 </div>
+<div class="table-wrapper colwidths-given docutils container" id="id10">
+<table class="docutils align-default" id="id10">
+<caption><span class="caption-text">commits</span><a class="headerlink" href="#id10" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 20.0%" />
+<col style="width: 15.0%" />
+<col style="width: 65.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Column</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">id</span></code></p></td>
+<td><p>TEXT PK</p></td>
+<td><p>40-char SHA1.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">release</span></code></p></td>
+<td><p>TEXT</p></td>
+<td><p>Kernel release this commit first appeared in (e.g. <code class="docutils literal notranslate"><span class="pre">6.12</span></code>).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">mainline_id</span></code></p></td>
+<td><p>TEXT</p></td>
+<td><p>Mainline upstream SHA1; <code class="docutils literal notranslate"><span class="pre">NULL</span></code> when the commit is already mainline.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">commits</span></code> table contain is a subset of <code class="docutils literal notranslate"><span class="pre">verhaal.db</span></code> <code class="docutils literal notranslate"><span class="pre">commits</span></code> table
+Filtered to commits referenced in the <code class="docutils literal notranslate"><span class="pre">cves</span></code> table plus stable-branch
+backports of fix commits (needed to resolve cherry-picked stable SHAs to
+their mainline equivalents).</p>
 </section>
 </section>
 </section>
