@@ -47,8 +47,8 @@ with zipfile.ZipFile(sys.argv[1]) as z:
             scores[cve] = None
             summaries[cve] = None
 
-if os.path.exists('scores.json'):
-    with open('scores.json') as f:
+if os.path.exists(sys.argv[2]):
+    with open(sys.argv[2]) as f:
         prev = json.load(f)
     for cve, score in zip(prev['cve'], prev['cvss_score']):
         if score is not None and scores.get(cve) is None:
@@ -61,5 +61,5 @@ with ThreadPoolExecutor(max_workers=WORKERS) as ex:
         cve = futures[fut]
         scores[cve] = fut.result()
 
-with open('scores.json', 'w') as f:
+with open(sys.argv[2], 'w') as f:
     json.dump({'cve': cves, 'cvss_score': [scores[c] for c in cves], 'summary': [summaries[c] for c in cves]}, f)
