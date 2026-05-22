@@ -39,10 +39,6 @@ struct Args {
     /// Path to post.db (default: <vulns-root>/post.db)
     #[clap(long)]
     post_db: Option<PathBuf>,
-
-    /// Path to verhaal.db (default: <vulns-root>/tools/verhaal/verhaal.db)
-    #[clap(long)]
-    verhaal_db: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -76,7 +72,7 @@ impl PostDb {
     fn all_cves(&self) -> Vec<String> {
         let mut stmt = self
             .conn
-            .prepare("SELECT DISTINCT cve FROM sha ORDER BY cve")
+            .prepare("SELECT DISTINCT cve FROM cves ORDER BY cve")
             .expect("prepare all_cves");
         stmt.query_map([], |row| row.get::<_, String>(0))
             .expect("query all_cves")
@@ -88,7 +84,7 @@ impl PostDb {
     fn shas_for(&self, cve: &str, role: i32) -> Vec<String> {
         let mut stmt = self
             .conn
-            .prepare("SELECT sha FROM sha WHERE cve=?1 AND role=?2")
+            .prepare("SELECT sha FROM cves WHERE cve=?1 AND role=?2")
             .expect("prepare shas_for");
         stmt.query_map(rusqlite::params![cve, role], |row| row.get::<_, String>(0))
             .expect("query shas_for")
@@ -120,27 +116,29 @@ impl PostDb {
             .flatten()
             .any(|f| compiled_files.contains(f.as_str()))
     }
-}
 
-/// Returns the kernel release version for a SHA from verhaal.db, or "" if not found.
-fn get_version(conn: &Connection, sha: &str) -> String {
-    conn.query_row(
-        "SELECT release FROM commits WHERE id=?1",
-        [sha],
-        |row| row.get::<_, String>(0),
-    )
-    .unwrap_or_default()
-}
+    /// Returns the kernel release version for a SHA, or "" if not found.
+    fn get_version(&self, sha: &str) -> String {
+        self.conn
+            .query_row(
+                "SELECT release FROM commits WHERE id=?1",
+                [sha],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap_or_default()
+    }
 
-/// Returns the mainline commit id for a given sha using verhaal.db.
-/// For stable backports returns the mainline_id column; otherwise returns sha as-is.
-fn get_mainline_id(conn: &Connection, sha: &str) -> String {
-    conn.query_row(
-        "SELECT COALESCE(NULLIF(mainline_id, ''), id) FROM commits WHERE id LIKE ?1 || '%'",
-        [sha],
-        |row| row.get::<_, String>(0),
-    )
-    .unwrap_or_else(|_| sha.to_string())
+    /// Returns the mainline commit id for a SHA.
+    /// For stable backports returns the mainline_id column; otherwise returns sha as-is.
+    fn get_mainline_id(&self, sha: &str) -> String {
+        self.conn
+            .query_row(
+                "SELECT COALESCE(mainline_id, id) FROM commits WHERE id LIKE ?1 || '%'",
+                [sha],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap_or_else(|_| sha.to_string())
+    }
 }
 
 /// Returns true if `candidate` version is reachable from `target`.
@@ -163,11 +161,11 @@ fn sha_matches(sha: &str, cherry_picks: &HashSet<String>) -> bool {
 }
 
 /// Expands raw cherry-pick SHAs to also include their mainline equivalents.
-fn expand_cherry_picks(raw: &[String], verhaal: &Connection) -> HashSet<String> {
+fn expand_cherry_picks(raw: &[String], post_db: &PostDb) -> HashSet<String> {
     let mut set = HashSet::new();
     for sha in raw {
         let lower = sha.to_lowercase();
-        let mainline = get_mainline_id(verhaal, &lower);
+        let mainline = post_db.get_mainline_id(&lower);
         set.insert(lower);
         set.insert(mainline);
     }
@@ -177,7 +175,6 @@ fn expand_cherry_picks(raw: &[String], verhaal: &Connection) -> HashSet<String> 
 /// Returns true if the CVE is unfixed in `target` accounting for `cherry_picks`.
 fn is_cve_unfixed(
     post_db: &PostDb,
-    verhaal: &Connection,
     cve: &str,
     target: &str,
     cherry_picks: &HashSet<String>,
@@ -191,7 +188,7 @@ fn is_cve_unfixed(
     } else {
         vuln_shas
             .iter()
-            .any(|sha| version_reachable(&get_version(verhaal, sha), target))
+            .any(|sha| version_reachable(&post_db.get_version(sha), target))
     };
 
     if !affected {
@@ -200,7 +197,7 @@ fn is_cve_unfixed(
 
     // Check if any fix is included in the target or matches a cherry-pick.
     let fixed = fix_shas.iter().any(|sha| {
-        version_reachable(&get_version(verhaal, sha), target) || sha_matches(sha, cherry_picks)
+        version_reachable(&post_db.get_version(sha), target) || sha_matches(sha, cherry_picks)
     });
 
     !fixed
@@ -209,19 +206,18 @@ fn is_cve_unfixed(
 /// Compute the list of unfixed CVEs for one SBOM entry.
 fn compute_cves(
     post_db: &PostDb,
-    verhaal: &Connection,
     stable_tag: &str,
     cherry_picked: &[String],
     compiled_files: &[String],
 ) -> Vec<String> {
     let target = stable_tag.strip_prefix('v').unwrap_or(stable_tag);
-    let cherry_picks = expand_cherry_picks(cherry_picked, verhaal);
+    let cherry_picks = expand_cherry_picks(cherry_picked, post_db);
     let files_set: HashSet<&str> = compiled_files.iter().map(String::as_str).collect();
 
     post_db
         .all_cves()
         .into_iter()
-        .filter(|cve| is_cve_unfixed(post_db, verhaal, cve, target, &cherry_picks))
+        .filter(|cve| is_cve_unfixed(post_db, cve, target, &cherry_picks))
         .filter(|cve| {
             // When compiled-files are given, skip CVEs whose file list is known
             // but doesn't overlap with compiled-files.
@@ -246,16 +242,6 @@ fn find_post_db() -> Result<PathBuf> {
     }
 }
 
-fn find_verhaal_db() -> Result<PathBuf> {
-    let vulns_dir = cve_utils::common::find_vulns_dir()?;
-    let p = vulns_dir.join("tools").join("verhaal").join("verhaal.db");
-    if p.exists() {
-        Ok(p)
-    } else {
-        Err(anyhow!("verhaal.db not found at {}", p.display()))
-    }
-}
-
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -271,21 +257,11 @@ fn main() -> Result<()> {
     };
     let post_db = PostDb::open(&post_db_path)?;
 
-    let verhaal_path = match args.verhaal_db {
-        Some(p) => p,
-        None => find_verhaal_db()?,
-    };
-    if !verhaal_path.exists() {
-        return Err(anyhow!("verhaal.db not found at {}", verhaal_path.display()));
-    }
-    let verhaal = Connection::open(&verhaal_path)?;
-
     // Process each SBOM entry and build the reply.
     let mut reply: HashMap<String, CveResult> = HashMap::new();
     for (uid, entry) in &request {
         let cves = compute_cves(
             &post_db,
-            &verhaal,
             &entry.stable_tag,
             &entry.cherry_picked,
             &entry.compiled_files,

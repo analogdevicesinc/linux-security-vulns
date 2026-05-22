@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
 // grondig CLI tests
-// Requires verhaal.db and post.db
+// Requires post.db
 
 use assert_cmd::Command as Cmd;
 use predicates::prelude::*;
@@ -16,11 +16,6 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Path to verhaal.db.
-fn verhaal_db() -> PathBuf {
-    repo_root().join("verhaal.db")
-}
-
 /// Path to post.db.
 fn post_db() -> PathBuf {
     repo_root().join("post.db")
@@ -32,8 +27,6 @@ fn grondig(request: &Value) -> Value {
         .expect("grondig binary")
         .arg("--post-db")
         .arg(post_db())
-        .arg("--verhaal-db")
-        .arg(verhaal_db())
         .write_stdin(serde_json::to_string(request).unwrap())
         .assert()
         .success()
@@ -74,8 +67,6 @@ fn empty_json_object_succeeds() {
         .expect("grondig binary")
         .arg("--post-db")
         .arg(post_db())
-        .arg("--verhaal-db")
-        .arg(verhaal_db())
         .write_stdin("{}")
         .assert()
         .success()
@@ -88,8 +79,6 @@ fn invalid_json_returns_error() {
         .expect("grondig binary")
         .arg("--post-db")
         .arg(post_db())
-        .arg("--verhaal-db")
-        .arg(verhaal_db())
         .write_stdin("not json")
         .assert()
         .failure();
