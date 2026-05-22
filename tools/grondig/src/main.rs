@@ -23,20 +23,147 @@
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
-use cve_utils::compare_kernel_versions;
-use cve_utils::kernel_version_major;
-use cve_utils::version_is_mainline;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct KernelVersion {
+    components: Vec<u32>,
+    rc_num: Option<u32>,
+    is_queue: bool,
+    is_rc_by_name: bool,
+}
+
+impl KernelVersion {
+    fn is_rc(&self) -> bool {
+        self.rc_num.is_some() || self.is_rc_by_name
+    }
+
+    fn is_mainline(&self) -> bool {
+        if self.components.is_empty() || self.components[0] == 0 {
+            return false;
+        }
+        if self.is_rc() {
+            return true;
+        }
+        if self.is_queue {
+            return false;
+        }
+        if self.components.len() >= 3
+            && self.components[0] == 2
+            && (self.components[1] == 6 || self.components[1] == 4)
+        {
+            return self.components.len() == 3;
+        }
+        self.components.len() == 2
+    }
+
+    fn major_version(&self) -> String {
+        if self.components.is_empty() {
+            return String::new();
+        }
+        if self.components.len() >= 3 && self.components[0] == 2 && self.components[1] == 6 {
+            return format!("2.6.{}", self.components[2]);
+        }
+        if self.components.len() >= 2 {
+            return format!("{}.{}", self.components[0], self.components[1]);
+        }
+        String::new()
+    }
+
+    fn major_matches(&self, other: &Self) -> bool {
+        !self.major_version().is_empty()
+            && self.major_version() == other.major_version()
+    }
+}
+
+impl FromStr for KernelVersion {
+    type Err = ();
+
+    fn from_str(version: &str) -> std::result::Result<Self, ()> {
+        let is_queue = version.contains("-queue");
+        let is_rc_by_name = version.contains("-rc");
+        let (base_version, rc_num) = version.find("-rc").map_or((version, None), |rc_idx| {
+            let base = &version[0..rc_idx];
+            let rc_number = if rc_idx + 3 < version.len() {
+                version[rc_idx + 3..].parse::<u32>().ok()
+            } else {
+                Some(0)
+            };
+            (base, rc_number)
+        });
+        let components: Vec<u32> = base_version
+            .split('.')
+            .filter_map(|s| s.parse::<u32>().ok())
+            .collect();
+        Ok(Self { components, rc_num, is_queue, is_rc_by_name })
+    }
+}
+
+impl PartialOrd for KernelVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for KernelVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.major_matches(other) {
+            if self.is_mainline() && !other.is_mainline() {
+                return Ordering::Less;
+            }
+            if !self.is_mainline() && other.is_mainline() {
+                return Ordering::Greater;
+            }
+        }
+        let max_len = std::cmp::max(self.components.len(), other.components.len());
+        for i in 0..max_len {
+            let v1 = self.components.get(i).copied().unwrap_or(0);
+            let v2 = other.components.get(i).copied().unwrap_or(0);
+            match v1.cmp(&v2) {
+                Ordering::Equal => {}
+                ord => return ord,
+            }
+        }
+        match (self.is_rc(), other.is_rc()) {
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            (true, true) => self.rc_num.unwrap_or(0).cmp(&other.rc_num.unwrap_or(0)),
+            (false, false) => Ordering::Equal,
+        }
+    }
+}
+
+fn version_is_mainline(version: &str) -> bool {
+    KernelVersion::from_str(version).map(|v| v.is_mainline()).unwrap_or(false)
+}
+
+fn kernel_version_major(version: &str) -> String {
+    KernelVersion::from_str(version).map(|v| v.major_version()).unwrap_or_default()
+}
+
+fn compare_kernel_versions(v1: &str, v2: &str) -> Ordering {
+    if v1 == v2 {
+        return Ordering::Equal;
+    }
+    match (KernelVersion::from_str(v1), KernelVersion::from_str(v2)) {
+        (Ok(a), Ok(b)) => a.cmp(&b),
+        _ => v1.cmp(v2),
+    }
+}
+
+// ---------------------------------------------------------------------------
 
 /// Report CVEs that remain unfixed in a kernel version, accounting for cherry-picked fixes.
 #[derive(Parser, Debug)]
 #[clap(author, version, about, verbatim_doc_comment)]
 struct Args {
-    /// Path to post.db (default: <vulns-root>/post.db)
+    /// Path to post.db (default: post.db next to the binary, then current directory)
     #[clap(long)]
     post_db: Option<PathBuf>,
 }
@@ -142,22 +269,16 @@ impl PostDb {
 }
 
 /// Returns true if `candidate` version is reachable from `target`.
-/// "0" means no fix available.
 fn version_reachable(candidate: &str, target: &str) -> bool {
     if candidate.is_empty() || candidate == "0" {
-        return true; // unknown origin -> assume affects all versions
+        return true;
     }
     if version_is_mainline(candidate) {
-        compare_kernel_versions(candidate, target) != std::cmp::Ordering::Greater
+        compare_kernel_versions(candidate, target) != Ordering::Greater
     } else {
         kernel_version_major(candidate) == kernel_version_major(target)
-            && compare_kernel_versions(candidate, target) != std::cmp::Ordering::Greater
+            && compare_kernel_versions(candidate, target) != Ordering::Greater
     }
-}
-
-/// Returns true if `sha` matches any cherry-pick.
-fn sha_matches(sha: &str, cherry_picks: &HashSet<String>) -> bool {
-    cherry_picks.contains(sha)
 }
 
 /// Expands raw cherry-pick SHAs to also include their mainline equivalents.
@@ -182,22 +303,19 @@ fn is_cve_unfixed(
     let vuln_shas = post_db.shas_for(cve, 0);
     let fix_shas = post_db.shas_for(cve, 1);
 
-    // Determine if this CVE was introduced in or before `target`.
     let affected = if vuln_shas.is_empty() {
-        true // no vulnerability-intro info -> assume affects all versions
+        true
     } else {
-        vuln_shas
-            .iter()
-            .any(|sha| version_reachable(&post_db.get_version(sha), target))
+        vuln_shas.iter().any(|sha| version_reachable(&post_db.get_version(sha), target))
     };
 
     if !affected {
         return false;
     }
 
-    // Check if any fix is included in the target or matches a cherry-pick.
     let fixed = fix_shas.iter().any(|sha| {
-        version_reachable(&post_db.get_version(sha), target) || sha_matches(sha, cherry_picks)
+        version_reachable(&post_db.get_version(sha), target)
+            || cherry_picks.contains(sha.as_str())
     });
 
     !fixed
@@ -219,8 +337,6 @@ fn compute_cves(
         .into_iter()
         .filter(|cve| is_cve_unfixed(post_db, cve, target, &cherry_picks))
         .filter(|cve| {
-            // When compiled-files are given, skip CVEs whose file list is known
-            // but doesn't overlap with compiled-files.
             if files_set.is_empty() {
                 return true;
             }
@@ -233,8 +349,15 @@ fn compute_cves(
 }
 
 fn find_post_db() -> Result<PathBuf> {
-    let vulns_dir = cve_utils::common::find_vulns_dir()?;
-    let p = vulns_dir.join("post.db");
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let p = dir.join("post.db");
+            if p.exists() {
+                return Ok(p);
+            }
+        }
+    }
+    let p = PathBuf::from("post.db");
     if p.exists() {
         Ok(p)
     } else {
