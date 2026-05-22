@@ -3,6 +3,8 @@ run-name: Build auxiliary vulnerabilities database
 on:
   workflow_dispatch:
   workflow_call:
+  schedule:
+  - cron: '30 6 * * *'   # 06:30 UTC daily, 30 min after verhaal.db
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -31,9 +33,13 @@ jobs:
         curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -L -o build-post-db.py \
           https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/refs/heads/ci/build-post-db.py
 
+        curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -L -o verhaal.db.xz \
+          https://github.com/sashalevin/verhaal/releases/download/db-latest/verhaal.db.xz
+        xz --decompress verhaal.db.xz
+
     - name: Build post.db
       run: |
-        python3 build-post-db.py
+        python3 build-post-db.py . post.db verhaal.db
         xz --compress post.db
 
     - name: Get latest vars
@@ -69,19 +75,3 @@ jobs:
                         post.db.xz \
                         post.db.xz
 
-    - name: Delete stale cache
-      run: |
-        gh-delete-cache () {
-          local token=$1
-          local repo=$2
-          local key=$3
-          curl -sL -X DELETE \
-            -H "Authorization: Bearer $token" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "https://api.github.com/repos/$repo/actions/caches?key=$key"
-        }
-
-        gh-delete-cache ${{ secrets.GITHUB_TOKEN }} \
-                        ${{ github.repository }} \
-                        linux-security-vulns

@@ -1,6 +1,6 @@
 name: CVE artifact scan (score demo)
 run-name: CVE artifact scan (score demo) ${{ inputs.repository }}@${{ inputs.ref }}
-# This is a DEMO workflow, at scale, you maintain verhaal.db, post.db, and osv'
+# This is a DEMO workflow, at scale, you maintain, post.db, and osv'
 # as proper databases and query them directly.
 
 on:

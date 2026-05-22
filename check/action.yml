@@ -17,25 +17,9 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Restore cache
-      uses: actions/cache/restore@v5
-      id: cache
-      with:
-        key: linux-security-vulns
-        path: |
-          verhaal.db
-          post.db
-          grondig
-        fail-on-cache-miss: false
-
     - name: Get tools and databases
-      if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        curl -sL -H "Authorization: Bearer ${{ inputs.gh-token }}" -o verhaal.db.xz \
-            https://github.com/sashalevin/verhaal/releases/download/db-latest/verhaal.db.xz
-        xz --decompress verhaal.db.xz
-
         curl -sL -H "Authorization: Bearer ${{ inputs.gh-token }}" -o post.db.xz \
             https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest/post.db.xz
         xz --decompress post.db.xz
@@ -51,7 +35,7 @@ runs:
         [[ "${{ runner.debug }}" == "1" ]] && set -x
 
         result=$(printf '%s' '${{ inputs.request }}' | \
-            ./grondig --post-db ./post.db --verhaal-db ./verhaal.db)
+            ./grondig --post-db ./post.db)
 
         echo "$result"
 
@@ -59,12 +43,3 @@ runs:
         echo "$result" >> $GITHUB_OUTPUT
         echo 'EOF' >> $GITHUB_OUTPUT
 
-    - name: Save cache
-      if: steps.cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v5
-      with:
-        key: linux-security-vulns
-        path: |
-          verhaal.db
-          post.db
-          grondig

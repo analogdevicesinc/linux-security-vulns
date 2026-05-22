@@ -13,8 +13,9 @@ pipelines split in two groups, the build pipelines:
      Linux Kernel ─────────►│verhaal.db├──┬──► Daily
     (all history)           └──────────┘  │
                             ┌───────┐     │
-   Vulns CVE data ─────────►│post.db├─────┘
-                            └───────┘
+   Vulns CVE data ────┬────►│post.db├─────┘
+                      │     └───────┘
+       verhaal.db ────┘
                             ┌───────┐
       Source code ─────────►│grondig├────────► On changes
                             └───────┘
@@ -25,11 +26,9 @@ And check pipelines:
 
           Input        |  Tool       |  Output
 
-          verhaal.db ──┐
-                       │
-                       │  ┌───────┐
-             post.db ──┼─►│grondig├───► Vulnerabilities
-                       │  └───────┘     (matched CVEs)
+                            ┌───────┐
+             post.db ──────►│grondig├───► Vulnerabilities
+                       ┌───►└───────┘     (matched CVEs)
                        │
    ┌────────────────┐  │
    │Query:          │  │
@@ -260,9 +259,12 @@ Data source: https://git.kernel.org/pub/scm/linux/kernel/
 ~~~~~~~~~~~
 
 Correlates CVEs with affected source files and with their vulnerable/fix
-commits.
+commits, and a filtered subset of ``verhaal.db`` commit metadata.
 
-Data source: https://git.kernel.org/pub/scm/linux/security/vulns.git/tree/cve
+Data sources:
+
+- https://git.kernel.org/pub/scm/linux/security/vulns.git/tree/cve
+- https://github.com/sashalevin/verhaal/releases/download/db-latest/verhaal.db.xz
 
 Database tables:
 
@@ -280,7 +282,7 @@ Database tables:
      - TEXT
      - Source file path.
 
-.. list-table:: sha
+.. list-table:: cves
    :header-rows: 1
    :widths: 20 15 65
 
@@ -296,3 +298,25 @@ Database tables:
    * - ``role``
      - INTEGER
      - ``0`` = vulnerable commit, ``1`` = fix commit.
+
+.. list-table:: commits
+   :header-rows: 1
+   :widths: 20 15 65
+
+   * - Column
+     - Type
+     - Description
+   * - ``id``
+     - TEXT PK
+     - 40-char SHA1.
+   * - ``release``
+     - TEXT
+     - Kernel release this commit first appeared in (e.g. ``6.12``).
+   * - ``mainline_id``
+     - TEXT
+     - Mainline upstream SHA1; ``NULL`` when the commit is already mainline.
+
+The ``commits`` table contain is a subset of ``verhaal.db`` ``commits`` table
+Filtered to commits referenced in the ``cves`` table plus stable-branch
+backports of fix commits (needed to resolve cherry-picked stable SHAs to
+their mainline equivalents).
