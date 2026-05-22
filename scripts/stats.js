@@ -3,6 +3,29 @@
 import { WaitEvent } from '@shared/scripts/event.js'
 import { DOM } from '@shared/scripts/dom.js'
 
+const LTS_COLORS = {
+  '5.10': 'rgba(220, 60, 60,0.8)',
+  '5.15': 'rgba(230,140, 30,0.8)',
+  '6.1':  'rgba(200,190, 30,0.8)',
+  '6.6':  'rgba( 50,180, 80,0.8)',
+  '6.12': 'rgba( 40,140,220,0.8)',
+  '6.18': 'rgba(130, 70,200,0.8)',
+  '7.0':  'rgba(180, 60,180,0.8)',
+}
+
+function versionKey (r) {
+  return r.split(/[.\-]/).filter(s => /^\d+$/.test(s)).map(Number)
+}
+
+function versionCmp (a, b) {
+  const ka = versionKey(a), kb = versionKey(b)
+  for (let i = 0; i < Math.max(ka.length, kb.length); i++) {
+    const d = (ka[i] || 0) - (kb[i] || 0)
+    if (d !== 0) return d
+  }
+  return 0
+}
+
 function scoreColor (score, count, maxCount, alpha = 0.65) {
   if (score === null) return `rgba(132,139,149,${alpha})`
   const t = (score / 10) * (count / maxCount)
@@ -131,6 +154,70 @@ class Stats {
 
     stats.prepend(wrap2)
     stats.prepend(wrap1)
+  }
+  render_tags_chart_ (tags) {
+    const stats = DOM.get('#security-stats', this.$.body)
+    if (!stats) return
+
+    // Group releases by LTS series
+    const series = {}
+    for (const tag of Object.keys(tags)) {
+      const lts = Object.keys(LTS_COLORS).find(l => tag === l || tag.startsWith(l + '.'))
+      if (!lts) continue
+      ;(series[lts] ??= []).push(tag)
+    }
+
+    // Sort each series by version, right-align so newest releases line up
+    const maxLen = Math.max(...Object.values(series).map(r => r.length))
+    const datasets = []
+    for (const [lts, rels] of Object.entries(series).sort((a, b) => versionCmp(a[0], b[0]))) {
+      rels.sort(versionCmp)
+      const offset = maxLen - rels.length
+      datasets.push({
+        label: lts,
+        data: rels.map((r, i) => ({ x: i + offset, y: tags[r], label: r })),
+        backgroundColor: LTS_COLORS[lts] || 'rgba(132,139,149,0.8)',
+        borderColor: (LTS_COLORS[lts] || 'rgba(132,139,149,0.8)').replace(/[\d.]+\)$/, '1)'),
+        showLine: true,
+        tension: 0.3,
+        pointRadius: 5,
+        pointHoverRadius: 7,
+      })
+    }
+
+    const wrap = DOM.new('div', { style: 'position: relative; height: 500px; margin-bottom: 2em;' })
+    const ctx = DOM.new('canvas', { id: 'chart-tags' })
+    wrap.append(ctx)
+    new Chart(ctx, {
+      type: 'scatter',
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          title: { display: true, text: 'Unfixed CVEs per LTS stable release' },
+          tooltip: { callbacks: { label: (item) => `${item.raw.label}: ${item.raw.y} CVEs` } },
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Stable release (oldest → newest)' },
+            ticks: { display: false },
+          },
+          y: {
+            title: { display: true, text: 'Unfixed CVEs' },
+            beginAtZero: true,
+          },
+        },
+      },
+    })
+
+    stats.prepend(wrap)
+  }
+  render_tags_chart (tags) {
+    if (typeof Chart === 'undefined')
+      import('https://cdn.jsdelivr.net/npm/chart.js').then(() => this.render_tags_chart_(tags))
+    else
+      this.render_tags_chart_(tags)
   }
   render_charts (results, scoreMap) {
     if (typeof Chart === "undefined")
@@ -282,17 +369,21 @@ class Stats {
                               .replace('{branch}', 'data')
                               .replace('{pathname}', '')
 
-    const response = fetch(
-      new Request(new URL('refs.json', base_url))
-    )
-      .then(response => response)
+    fetch(new Request(new URL('refs.json', base_url)))
       .then(response => {
-        if (!response.ok)
-          throw new Error();
+        if (!response.ok) throw new Error()
         return response.json()
       })
       .then(obj => this.collect_vuls(obj, base_url))
-      .catch(err => {})
+      .catch(() => {})
+
+    fetch(new Request(new URL('tags.json', base_url)))
+      .then(response => {
+        if (!response.ok) throw new Error()
+        return response.json()
+      })
+      .then(tags => this.render_tags_chart(tags))
+      .catch(() => {})
   }
   construct () {
     this.$.body = DOM.get('.body');
