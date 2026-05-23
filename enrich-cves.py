@@ -27,8 +27,12 @@ with open('refs.json') as f:
 
 cves = set()
 for ref in refs:
+    print(f"got {ref}")
     with open(ref) as f:
-        for entry in json.load(f)['result'].values():
+        json_ = json.load(f)
+        if 'result' not in json_:
+            continue
+        for entry in json_['result'].values():
             cves.update(entry.get('cves', []))
 cves = sorted(cves)
 
