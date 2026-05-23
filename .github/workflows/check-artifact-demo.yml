@@ -59,7 +59,7 @@ jobs:
           '{"ref": $ref, "sha": $sha, "modified": $modified, "result": $result}' \
           > "${ref}.json"
 
-        ls *.json | grep -v refs.json | grep -v scores.json | jq -nR '[inputs]' > refs.json
+        ls refs-*.json | jq -nR '[inputs]' > refs.json
 
     - name: Build scores file
       # DEMO step, you should have a db table with the CVEs scores.
