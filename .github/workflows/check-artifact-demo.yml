@@ -74,21 +74,26 @@ jobs:
         curl -sL -o "$all_zip" \
           "https://storage.googleapis.com/osv-vulnerabilities/Linux/all.zip"
         [ -f scores.json ] || echo '{}' > scores.json
-        cp scores.json _scores.json
-        python3 "$enrich_cves" "$all_zip" "_scores.json"
+        python3 "$enrich_cves" "$all_zip" "scores.json"
         rm "$enrich_cves" "$all_zip"
+
+    - name: Commit
+      run: |
+        git add .
+        git commit -m "deploy: ${{ inputs.ref }}" --allow-empty
+
+    - name: Setup merge driver
+      run: |
+        curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o json-merge.py \
+          https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/ci/json-merge.py
+
+        git config merge.json.name "JSON merge driver"
+        git config merge.json.driver "python3 ./json-merge.py %O %A %B %L %P"
+        git config merge.json.recursive binary
+        echo '*.json merge=json' >> .gitattributes
 
     - name: Deploy
       run: |
-        git pull origin data --autostash
-        jq -s '
-          map([ .cve, .cvss_score, .summary ] | transpose | map({cve: .[0], score: .[1], sum: .[2]})) |
-          flatten | group_by(.cve) |
-          map(sort_by(.score != null) | last) |
-          sort_by(.cve) |
-          { cve: map(.cve), cvss_score: map(.score), summary: map(.sum) }
-        ' scores.json _scores.json > _merged.json
-        mv _merged.json scores.json && rm _scores.json
-        git add .
-        git commit -m "deploy: ${{ inputs.ref }}" --allow-empty
-        git push origin HEAD:data
+        while ! git push origin HEAD:data ; do
+          git pull --no-rebase origin data
+        done
