@@ -79,7 +79,7 @@ class Stats {
         const count = entry.cves.length
         const scored = entry.cves.map(cve => scoreMap.get(cve)).filter(s => s != null)
         const avg = scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : null
-        scorePoints.push({ x: ri, y: di, r: Math.max(4, Math.sqrt(count) * 2.5), avgScore: avg })
+        scorePoints.push({ x: ri, y: di, r: Math.max(2, Math.sqrt(count) * 1.5), avgScore: avg })
         scoreColors.push(scoreColor(avg, count, maxCount))
         scoreBorders.push(scoreColor(avg, count, maxCount, 1))
       })
