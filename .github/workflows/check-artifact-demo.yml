@@ -1,6 +1,6 @@
 name: CVE artifact scan (score demo)
 run-name: CVE artifact scan (score demo) ${{ inputs.repository }}@${{ inputs.ref }}
-# This is a DEMO workflow, at scale, you maintain, post.db, and osv'
+# This is a DEMO workflow, at scale, you maintain, post.db, and nvd cve'
 # as proper databases and query them directly.
 
 on:
@@ -72,11 +72,9 @@ jobs:
         all_zip=$(mktemp -t all.XXX.zip)
         curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o "$enrich_cves" \
             https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/ci/enrich-cves.py
-        curl -sL -o "$all_zip" \
-          "https://storage.googleapis.com/osv-vulnerabilities/Linux/all.zip"
         [ -f scores.json ] || echo '{}' > scores.json
-        python3 "$enrich_cves" "$all_zip" "scores.json"
-        rm "$enrich_cves" "$all_zip"
+        python3 "$enrich_cves" "scores.json"
+        rm "$enrich_cves"
 
     - name: Commit
       run: |
