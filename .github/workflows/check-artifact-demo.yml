@@ -42,22 +42,23 @@ jobs:
     - uses: analogdevicesinc/doctools/blank@action
 
     - name: Merge result
-      env:
-        sha: ${{ needs.check.outputs.sha }}
-        result: ${{ needs.check.outputs.result }}
       run: |
+        # Merge result
+        [[ "${{ runner.debug }}" == "1" ]] && set -x
         git fetch origin data:data
         git switch data
 
         ref="${{ inputs.ref }}"
         ref=$(echo "$ref" | sed 's|/|-|g')
+        echo '${{ needs.check.outputs.result }}' > result.json
         jq -cn \
           --arg ref "${{ inputs.ref }}" \
-          --arg sha "$sha" \
+          --arg sha "${{ needs.check.outputs.sha }}" \
           --arg modified "$(date -u +%Y-%m-%dT%H:%M:%S.%6NZ)" \
-          --argjson result "$result" \
-          '{"ref": $ref, "sha": $sha, "modified": $modified, "result": $result}' \
+          --slurpfile result result.json \
+          '{"ref": $ref, "sha": $sha, "modified": $modified, "result": $result[0]}' \
           > "${ref}.json"
+        rm result.json
 
         ls refs-*.json | jq -nR '[inputs]' > refs.json
 
