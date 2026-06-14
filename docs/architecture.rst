@@ -60,6 +60,17 @@ and score of the CVEs, the check step also has an enrichment job that combines:
   | Daily `OSV <https://osv.dev>`__ schema entries for the 'Linux' ecosystem.
 - | `NIST National Vulnerability Database  <https://nvd.nist.gov/>`__ API calls.
 
+Benefits
+--------
+
+This pipeline focus on batch checking SBOMs with minimal databases, `grondig` is
+1.3MB, `post.db.xz` ~6MB, and an actionable SBOM less than 1MB.
+
+To replicate it with `strak`, it requires `verhaal.db.xz` (~200MB), full Linux Kernel tree
+(if only stable tags are checked, you can trick it with a "dummy" tree, however),
+and "Vulns CVE Data" (~350MB). It also requires external scripting for cherry-picked fixes,
+and one `strak` instance per SBOM-check.
+
 .. _grondig:
 
 Grondig
@@ -121,26 +132,37 @@ advantage is that it allows convoluted verification with commits from different
 feature branches that may be released in different stable tags. It has the
 limitation of querying one reference at a time and is mostly a maintainer tool.
 
-Recommended workflow
---------------------
+SBOM generation and usage
+-------------------------
 
-The recommended workflow is to generate a SBOM during build that maps those
-inputs to grondig; below are tips on how to achieve that.
+Generate a SBOM during the build step of the Linux Kernel. Then have a
+usage-step where a small layer extracts the SBOM-fields into the expected
+`grondig` format.
 
-**Compiled files:** regardless of whether gcc or llvm is used,
-`gen_compile_commands.py <https://github.com/gregkh/linux/blob/master/scripts/clang-tools/gen_compile_commands.py>`__
-can be invoked to generate ``compiled_commands.json`` containing the list of
-source files that were built. Alternatively, a SPDX 3.0 or CycloneDX SBOM can
-be provided — :git+linux-security-vulns:`ci:build-grondig-request.py` supports
-all three formats.
+For the completeness of the SBOM, you can use:
 
-**Cherry-picked commits:** ensure to use the `-x
-<https://git-scm.com/docs/git-cherry-pick#Documentation/git-cherry-pick.txt--x>`__
-flag to mark the message with ``cherry-picked from: <sha>``, so they are easily collected.
+- **Compiled files:** regardless of whether gcc or llvm is used,
+  `gen_compile_commands.py <https://github.com/gregkh/linux/blob/master/scripts/clang-tools/gen_compile_commands.py>`__
+  can be invoked to generate ``compiled_commands.json`` containing the list of
+  source files that were built.
 
-Then, daily update the database mirrors, and batch check the SBOMs, using a simple formatting
-script like :git+linux-security-vulns:`ci:build-grondig-request.py`, and propagate back the
-results to your vulnerability management system.
+- **Cherry-picked commits:** ensure to use the
+  `-x <https://git-scm.com/docs/git-cherry-pick#Documentation/git-cherry-pick.txt--x>`__
+  flag to mark the message with ``cherry-picked from: <sha>``, so they are easily collected.
+
+Other approaches are to use the SBOMs from `KernelSbom
+<https://github.com/TNG/KernelSbom>`__ (requires full linux built-tree) or
+`yocto SBOM <https://docs.yoctoproject.org/dev/dev-manual/sbom.html>`__
+(requires yocto). Still, will require some scripting to enrich the SBOM and
+stripping to obtain an "actionable" SBOM (<1MB) (both produce SBOMs around
+10MB~100MB). For the *cherry-picked commits* under yocto, you would apply each
+CVE fix as a patch *linux/files/00XX-*.patch*, so they are included in the SBOM.
+
+For the usage-step, daily update the database mirrors, and batch check the
+SBOMs, using a simple formatting script like
+:git+linux-security-vulns:`ci:build-grondig-request.py` (roughly supports
+SPDX3, CycloneDX, compile_commands), and propagate back the results to your
+vulnerability management system.
 
 Sample check workflows
 ~~~~~~~~~~~~~~~~~~~~~~
