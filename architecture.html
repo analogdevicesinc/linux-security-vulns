@@ -94,9 +94,10 @@
         <nav>
           <ul>
 <li><a class="reference internal" href="#">Architecture</a><ul>
+<li><a class="reference internal" href="#benefits">Benefits</a></li>
 <li><a class="reference internal" href="#grondig">Grondig</a></li>
 <li><a class="reference internal" href="#strak">Strak</a></li>
-<li><a class="reference internal" href="#recommended-workflow">Recommended workflow</a><ul>
+<li><a class="reference internal" href="#sbom-generation-and-usage">SBOM generation and usage</a><ul>
 <li><a class="reference internal" href="#sample-check-workflows">Sample check workflows</a></li>
 </ul>
 </li>
@@ -207,6 +208,15 @@ and score of the CVEs, the check step also has an enrichment job that combines:<
 </div>
 </li>
 </ul>
+<section id="benefits">
+<h2>Benefits<a class="headerlink" href="#benefits" title="Link to this heading"></a></h2>
+<p>This pipeline focus on batch checking SBOMs with minimal databases, <cite>grondig</cite> is
+1.3MB, <cite>post.db.xz</cite> ~6MB, and an actionable SBOM less than 1MB.</p>
+<p>To replicate it with <cite>strak</cite>, it requires <cite>verhaal.db.xz</cite> (~200MB), full Linux Kernel tree
+(if only stable tags are checked, you can trick it with a “dummy” tree, however),
+and “Vulns CVE Data” (~350MB). It also requires external scripting for cherry-picked fixes,
+and one <cite>strak</cite> instance per SBOM-check.</p>
+</section>
 <section id="grondig">
 <span id="id1"></span><h2>Grondig<a class="headerlink" href="#grondig" title="Link to this heading"></a></h2>
 <p><a class="icon git reference external" href="https://github.com/analogdevicesinc/linux-security-vulns/tree/feature/grondig/tools/grondig" target="_blank">Grondig</a> is a tool
@@ -258,21 +268,32 @@ advantage is that it allows convoluted verification with commits from different
 feature branches that may be released in different stable tags. It has the
 limitation of querying one reference at a time and is mostly a maintainer tool.</p>
 </section>
-<section id="recommended-workflow">
-<h2>Recommended workflow<a class="headerlink" href="#recommended-workflow" title="Link to this heading"></a></h2>
-<p>The recommended workflow is to generate a SBOM during build that maps those
-inputs to grondig; below are tips on how to achieve that.</p>
-<p><strong>Compiled files:</strong> regardless of whether gcc or llvm is used,
+<section id="sbom-generation-and-usage">
+<h2>SBOM generation and usage<a class="headerlink" href="#sbom-generation-and-usage" title="Link to this heading"></a></h2>
+<p>Generate a SBOM during the build step of the Linux Kernel. Then have a
+usage-step where a small layer extracts the SBOM-fields into the expected
+<cite>grondig</cite> format.</p>
+<p>For the completeness of the SBOM, you can use:</p>
+<ul class="simple">
+<li><p><strong>Compiled files:</strong> regardless of whether gcc or llvm is used,
 <a class="icon link reference external" href="https://github.com/gregkh/linux/blob/master/scripts/clang-tools/gen_compile_commands.py" target="_blank">gen_compile_commands.py</a>
 can be invoked to generate <code class="docutils literal notranslate"><span class="pre">compiled_commands.json</span></code> containing the list of
-source files that were built. Alternatively, a SPDX 3.0 or CycloneDX SBOM can
-be provided — <a class="icon git reference external" href="https://github.com/analogdevicesinc/linux-security-vulns/tree/ci/build-grondig-request.py" target="_blank">build-grondig-request.py</a> supports
-all three formats.</p>
-<p><strong>Cherry-picked commits:</strong> ensure to use the <a class="icon link reference external" href="https://git-scm.com/docs/git-cherry-pick#Documentation/git-cherry-pick.txt--x" target="_blank">-x</a>
-flag to mark the message with <code class="docutils literal notranslate"><span class="pre">cherry-picked</span> <span class="pre">from:</span> <span class="pre">&lt;sha&gt;</span></code>, so they are easily collected.</p>
-<p>Then, daily update the database mirrors, and batch check the SBOMs, using a simple formatting
-script like <a class="icon git reference external" href="https://github.com/analogdevicesinc/linux-security-vulns/tree/ci/build-grondig-request.py" target="_blank">build-grondig-request.py</a>, and propagate back the
-results to your vulnerability management system.</p>
+source files that were built.</p></li>
+<li><p><strong>Cherry-picked commits:</strong> ensure to use the
+<a class="icon link reference external" href="https://git-scm.com/docs/git-cherry-pick#Documentation/git-cherry-pick.txt--x" target="_blank">-x</a>
+flag to mark the message with <code class="docutils literal notranslate"><span class="pre">cherry-picked</span> <span class="pre">from:</span> <span class="pre">&lt;sha&gt;</span></code>, so they are easily collected.</p></li>
+</ul>
+<p>Other approaches are to use the SBOMs from <a class="icon link reference external" href="https://github.com/TNG/KernelSbom" target="_blank">KernelSbom</a> (requires full linux built-tree) or
+<a class="icon link reference external" href="https://docs.yoctoproject.org/dev/dev-manual/sbom.html" target="_blank">yocto SBOM</a>
+(requires yocto). Still, will require some scripting to enrich the SBOM and
+stripping to obtain an “actionable” SBOM (&lt;1MB) (both produce SBOMs around
+10MB~100MB). For the <em>cherry-picked commits</em> under yocto, you would apply each
+CVE fix as a patch <em>linux/files/00XX-</em>.patch*, so they are included in the SBOM.</p>
+<p>For the usage-step, daily update the database mirrors, and batch check the
+SBOMs, using a simple formatting script like
+<a class="icon git reference external" href="https://github.com/analogdevicesinc/linux-security-vulns/tree/ci/build-grondig-request.py" target="_blank">build-grondig-request.py</a> (roughly supports
+SPDX3, CycloneDX, compile_commands), and propagate back the results to your
+vulnerability management system.</p>
 <section id="sample-check-workflows">
 <h3>Sample check workflows<a class="headerlink" href="#sample-check-workflows" title="Link to this heading"></a></h3>
 <p>Two check workflows are provided:</p>
