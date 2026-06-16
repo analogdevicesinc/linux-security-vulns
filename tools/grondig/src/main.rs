@@ -1,35 +1,40 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// grondig - report unfixed CVEs for Linux kernel SBOMs.
+// grondig — Crossplane Composition Function (gRPC) for kernel CVE analysis.
 //
-// Reads a JSON request from stdin and writes a JSON reply to stdout.
-//
-// Request format:
-//   {
-//     "<uid>": {
-//       "stable-tag": "v6.12.5",
-//       "cherry-picked": ["<sha>", ...],
-//       "compiled-files": ["<path>", ...]
-//     },
-//     ...
-//   }
-//
-// Reply format:
-//   { "<uid>": { "cves": ["CVE-XXXX-YYYY", ...] }, ... }
+// Implements FunctionRunnerService (proto/fn/v1/run_function.proto).
+// Input:  observed XR spec.stableTag, spec.cherryPicked, spec.compiledFiles
+// Output: result message + "GrondigReady" condition + context "grondig/cves"
 //
 // "grondig" means "thorough" in Dutch.
 //
 // Copyright (c) 2026 - Jorge Marques <jorge.marques@analog.com>
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::Parser;
+use prost_types::value::Kind;
+use prost_types::{ListValue, Struct, Value};
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
-use std::io::{self, Read};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+use tokio::net::TcpListener;
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
+use tonic::{Request, Response, Status};
+
+pub mod fnv1 {
+    include!(concat!(env!("OUT_DIR"), "/apiextensions.r#fn.proto.v1.rs"));
+}
+
+use fnv1::function_runner_service_server::{
+    FunctionRunnerService, FunctionRunnerServiceServer,
+};
+use fnv1::{
+    Condition, ResponseMeta, Result as FnResult, RunFunctionRequest,
+    RunFunctionResponse, Severity, Status as CondStatus, Target,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct KernelVersion {
@@ -158,30 +163,6 @@ fn compare_kernel_versions(v1: &str, v2: &str) -> Ordering {
 }
 
 // ---------------------------------------------------------------------------
-
-/// Report CVEs that remain unfixed in a kernel version, accounting for cherry-picked fixes.
-#[derive(Parser, Debug)]
-#[clap(author, version, about, verbatim_doc_comment)]
-struct Args {
-    /// Path to post.db (default: post.db next to the binary, then current directory)
-    #[clap(long)]
-    post_db: Option<PathBuf>,
-}
-
-#[derive(Deserialize)]
-struct SbomEntry {
-    #[serde(rename = "stable-tag")]
-    stable_tag: String,
-    #[serde(rename = "cherry-picked", default)]
-    cherry_picked: Vec<String>,
-    #[serde(rename = "compiled-files", default)]
-    compiled_files: Vec<String>,
-}
-
-#[derive(Serialize)]
-struct CveResult {
-    cves: Vec<String>,
-}
 
 struct PostDb {
     conn: Connection,
@@ -348,50 +329,199 @@ fn compute_cves(
         .collect()
 }
 
-fn find_post_db() -> Result<PathBuf> {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let p = dir.join("post.db");
-            if p.exists() {
-                return Ok(p);
+// ---------------------------------------------------------------------------
+// gRPC service
+// ---------------------------------------------------------------------------
+
+struct GrondigFunction {
+    db: Arc<Mutex<PostDb>>,
+}
+
+#[tonic::async_trait]
+impl FunctionRunnerService for GrondigFunction {
+    async fn run_function(
+        &self,
+        request: Request<RunFunctionRequest>,
+    ) -> std::result::Result<Response<RunFunctionResponse>, Status> {
+        let req = request.into_inner();
+        let tag = req.meta.as_ref().map_or("", |m| &m.tag).to_string();
+
+        // Extract SBOM inputs from observed XR spec.
+        let xr_spec = req
+            .observed
+            .as_ref()
+            .and_then(|s| s.composite.as_ref())
+            .and_then(|r| r.resource.as_ref())
+            .and_then(|st| st.fields.get("spec"))
+            .and_then(|v| match &v.kind {
+                Some(Kind::StructValue(s)) => Some(s),
+                _ => None,
+            });
+
+        let (stable_tag, cherry_picked, compiled_files) = match xr_spec {
+            None => return Ok(Response::new(fatal(&tag, "MissingSpec",
+                "observed composite resource has no spec"))),
+            Some(spec) => {
+                let stable_tag = str_field(spec, "stableTag").unwrap_or_default();
+                if stable_tag.is_empty() {
+                    return Ok(Response::new(fatal(&tag, "MissingStableTag",
+                        "spec.stableTag is required")));
+                }
+                (stable_tag, str_list(spec, "cherryPicked"), str_list(spec, "compiledFiles"))
             }
-        }
-    }
-    let p = PathBuf::from("post.db");
-    if p.exists() {
-        Ok(p)
-    } else {
-        Err(anyhow!("post.db not found at {}", p.display()))
+        };
+
+        // Run CVE analysis (blocking SQLite → spawn_blocking).
+        let db = Arc::clone(&self.db);
+        let tag_clone = stable_tag.clone();
+        let cves = tokio::task::spawn_blocking(move || {
+            let db = db.lock().expect("PostDb mutex poisoned");
+            compute_cves(&db, &tag_clone, &cherry_picked, &compiled_files)
+        })
+        .await
+        .map_err(|e| Status::internal(format!("spawn_blocking panicked: {e}")))?;
+
+        let msg = if cves.is_empty() {
+            format!("grondig: no unfixed CVEs for {stable_tag}")
+        } else {
+            format!("grondig: {} unfixed CVE(s) for {stable_tag}: {}",
+                    cves.len(), cves.join(", "))
+        };
+
+        // Pass CVE list to downstream functions via pipeline context.
+        let context = {
+            let mut ctx = req.context.unwrap_or_default();
+            ctx.fields.insert("grondig/cves".into(), Value {
+                kind: Some(Kind::ListValue(ListValue {
+                    values: cves.iter()
+                        .map(|c| Value { kind: Some(Kind::StringValue(c.clone())) })
+                        .collect(),
+                })),
+            });
+            ctx
+        };
+
+        Ok(Response::new(RunFunctionResponse {
+            meta: Some(ResponseMeta { tag, ttl: None }),
+            desired: req.desired,
+            context: Some(context),
+            results: vec![FnResult {
+                severity: Severity::Normal as i32,
+                message: msg,
+                reason: Some("CVEsComputed".into()),
+                target: Some(Target::Composite as i32),
+            }],
+            conditions: vec![Condition {
+                r#type: "GrondigReady".into(),
+                status: CondStatus::ConditionTrue as i32,
+                reason: "CVEsComputed".into(),
+                message: Some(format!("{} unfixed CVE(s)", cves.len())),
+                target: Some(Target::Composite as i32),
+            }],
+            ..Default::default()
+        }))
     }
 }
 
-fn main() -> Result<()> {
+fn str_field(s: &Struct, key: &str) -> Option<String> {
+    s.fields.get(key).and_then(|v| match &v.kind {
+        Some(Kind::StringValue(sv)) => Some(sv.clone()),
+        _ => None,
+    })
+}
+
+fn str_list(s: &Struct, key: &str) -> Vec<String> {
+    s.fields.get(key)
+        .and_then(|v| match &v.kind {
+            Some(Kind::ListValue(lv)) => Some(lv),
+            _ => None,
+        })
+        .map(|lv| lv.values.iter()
+            .filter_map(|v| match &v.kind {
+                Some(Kind::StringValue(sv)) => Some(sv.clone()),
+                _ => None,
+            })
+            .collect())
+        .unwrap_or_default()
+}
+
+fn fatal(tag: &str, reason: &str, message: &str) -> RunFunctionResponse {
+    RunFunctionResponse {
+        meta: Some(ResponseMeta { tag: tag.into(), ttl: None }),
+        results: vec![FnResult {
+            severity: Severity::Fatal as i32,
+            message: message.into(),
+            reason: Some(reason.into()),
+            target: Some(Target::Composite as i32),
+        }],
+        conditions: vec![Condition {
+            r#type: "GrondigReady".into(),
+            status: CondStatus::ConditionFalse as i32,
+            reason: reason.into(),
+            message: Some(message.into()),
+            target: Some(Target::Composite as i32),
+        }],
+        ..Default::default()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CLI + main
+// ---------------------------------------------------------------------------
+
+#[derive(Parser, Debug)]
+#[clap(about = "Crossplane Function gRPC server for grondig")]
+struct Args {
+    /// Address to listen on.
+    #[clap(long, default_value = "0.0.0.0:9443")]
+    address: String,
+
+    /// Directory containing mTLS certs (tls.key, tls.crt, ca.crt).
+    #[clap(long, env = "TLS_SERVER_CERTS_DIR")]
+    tls_certs_dir: Option<PathBuf>,
+
+    /// Run without mTLS (development only).
+    #[clap(long)]
+    insecure: bool,
+
+    /// Path to post.db.
+    #[clap(long, default_value = "/post.db")]
+    post_db: PathBuf,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Read JSON request from stdin.
-    let mut input = String::new();
-    io::stdin().read_to_string(&mut input)?;
-    let request: HashMap<String, SbomEntry> = serde_json::from_str(&input)
-        .map_err(|e| anyhow!("invalid JSON input: {e}"))?;
+    let db = Arc::new(Mutex::new(PostDb::open(&args.post_db)?));
+    let addr: std::net::SocketAddr = args.address.parse()
+        .with_context(|| format!("invalid listen address: {}", args.address))?;
+    let svc = FunctionRunnerServiceServer::new(GrondigFunction { db });
 
-    let post_db_path = match args.post_db {
-        Some(p) => p,
-        None => find_post_db()?,
-    };
-    let post_db = PostDb::open(&post_db_path)?;
+    if args.insecure {
+        eprintln!("grondig: listening insecurely on {addr}");
+        let listener = TcpListener::bind(addr).await?;
+        Server::builder()
+            .add_service(svc)
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await?;
+    } else {
+        let dir = args.tls_certs_dir
+            .ok_or_else(|| anyhow!("TLS_SERVER_CERTS_DIR required unless --insecure"))?;
+        let cert = std::fs::read(dir.join("tls.crt"))
+            .with_context(|| format!("read {}/tls.crt", dir.display()))?;
+        let key = std::fs::read(dir.join("tls.key"))
+            .with_context(|| format!("read {}/tls.key", dir.display()))?;
+        let ca = std::fs::read(dir.join("ca.crt"))
+            .with_context(|| format!("read {}/ca.crt", dir.display()))?;
 
-    // Process each SBOM entry and build the reply.
-    let mut reply: HashMap<String, CveResult> = HashMap::new();
-    for (uid, entry) in &request {
-        let cves = compute_cves(
-            &post_db,
-            &entry.stable_tag,
-            &entry.cherry_picked,
-            &entry.compiled_files,
-        );
-        reply.insert(uid.clone(), CveResult { cves });
+        let tls = ServerTlsConfig::new()
+            .identity(Identity::from_pem(&cert, &key))
+            .client_ca_root(Certificate::from_pem(&ca));
+
+        eprintln!("grondig: listening with mTLS on {addr}");
+        Server::builder().tls_config(tls)?.add_service(svc).serve(addr).await?;
     }
 
-    println!("{}", serde_json::to_string_pretty(&reply)?);
     Ok(())
 }

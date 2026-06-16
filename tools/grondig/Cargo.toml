@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# grondig crossplane function crate.
+
+[package]
+name = "grondig"
+version = "0.1.0"
+edition = "2026"
+license = "GPL-2.0-only"
+autobins = false
+
+[dependencies]
+anyhow       = "1.0"
+clap         = { version = "4.4", features = ["derive", "env"] }
+prost        = "0.13"
+prost-types  = "0.13"
+rusqlite     = { version = "0.39", features = ["bundled"] }
+tokio        = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+tonic        = { version = "0.12", features = ["tls"] }
+
+[build-dependencies]
+tonic-build = "0.12"
+reqwest     = { version = "0.12", features = ["blocking"] }
+
+[dev-dependencies]
+assert_cmd  = "2.0"
+predicates  = "3.1"
+serde_json  = "1.0"
+
+[[bin]]
+name = "grondig"
+path = "src/main.rs"
+
+[[test]]
+name = "grondig"
+path = "tests/grondig.rs"

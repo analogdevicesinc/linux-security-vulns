@@ -64,10 +64,6 @@ path = "bippy/src/main.rs"
 name = "strak"
 path = "strak/src/main.rs"
 
-[[bin]]
-name = "grondig"
-path = "grondig/src/main.rs"
-
 # CVE Utils binaries
 [[bin]]
 name = "cve_search"
@@ -139,10 +135,6 @@ required-features = []
 [[test]]
 name = "strak"
 path = "strak/tests/strak.rs"
-
-[[test]]
-name = "grondig"
-path = "grondig/tests/grondig.rs"
 
 [[test]]
 name = "bippy"

@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-only
+apiVersion: meta.pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: grondig
+  annotations:
+    meta.crossplane.io/description: >
+      Reports unfixed CVEs for Linux kernel SBOMs.
+spec:
+  crossplane:
+    version: ">=v2.1.0"

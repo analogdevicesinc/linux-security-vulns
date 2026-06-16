@@ -1,0 +1,20 @@
+FROM rust:1-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        protobuf-compiler libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY tools/grondig/ tools/grondig/
+RUN cd tools/grondig && cargo build --release
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+ARG POST_DB_PATH=post.db
+
+COPY --from=builder /src/tools/grondig/target/release/grondig /function
+COPY ${POST_DB_PATH} /post.db
+
+EXPOSE 9443
+USER nonroot:nonroot
+ENTRYPOINT ["/function"]
