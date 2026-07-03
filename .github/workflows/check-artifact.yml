@@ -58,6 +58,7 @@ jobs:
     outputs:
       sha: ${{ steps.get-artifacts.outputs.sha }}
       result: ${{ steps.check.outputs.result }}
+      result-file: ${{ steps.check.outputs.result-file }}
 
     steps:
     - uses: cloudsmith-io/cloudsmith-cli-action@v1.0.5
@@ -143,27 +144,22 @@ jobs:
         curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o build-grondig-request.py \
             https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/ci/build-grondig-request.py
 
-        request=$(echo "$cc_files" | python3 build-grondig-request.py \
+        echo "$cc_files" | python3 build-grondig-request.py \
             --tag "$tag" \
-            --cherry-picks "$cherry_picks")
-
-        {
-          echo "request<<EOF"
-          echo "$request"
-          echo "EOF"
-        } >> $GITHUB_OUTPUT
+            --cherry-picks "$cherry_picks" \
+            > grondig-request.json
 
     - uses: analogdevicesinc/linux-security-vulns/check@ci
       id: check
       with:
-        request: ${{ steps.build.outputs.request }}
+        request-file: grondig-request.json
         url: ${{ inputs.url }}
 
     - name: Create summary
       run: |
         [[ "${{ runner.debug }}" == "1" ]] && set -x
 
-        result='${{ steps.check.outputs.result }}'
+        result=$(cat grondig-result.json)
 
         echo "## CVEs in $tag per defconfig" >> $GITHUB_STEP_SUMMARY
         echo "$result" | jq -c 'to_entries[]' | while IFS= read -r entry; do

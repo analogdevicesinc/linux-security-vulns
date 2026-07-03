@@ -3,8 +3,11 @@ description: Run grondig
 
 inputs:
   request:
-    description: "Query entries in json"
-    required: true
+    description: "Query entries in json (fallback)"
+    default: ''
+  request-file:
+    description: "Path to a file with query entries"
+    default: ''
   url:
     description: "Grondig endpoint url"
     default: ''
@@ -16,6 +19,9 @@ outputs:
   result:
     description: 'list of cves per uid, in json'
     value: ${{ steps.check.outputs.result }}
+  result-file:
+    description: 'path to the result file'
+    value: ${{ steps.check.outputs.result-file }}
 
 runs:
   using: composite
@@ -38,17 +44,24 @@ runs:
       run: |
         [[ "${{ runner.debug }}" == "1" ]] && set -x
 
+        request_file="${{ inputs.request-file }}"
+        if [[ -z "$request_file" ]]; then
+          request_file="$(mktemp)"
+          printf '%s' '${{ inputs.request }}' > "$request_file"
+        fi
+
         if [[ -n "${{ inputs.url }}" ]]; then
           result=$(curl -sS -k "${{ inputs.url }}" \
             -H 'Content-Type: application/json' \
-            -d '${{ inputs.request }}')
+            -d @"$request_file")
         else
-          result=$(printf '%s' '${{ inputs.request }}' | \
-              ./grondig --post-db ./post.db)
+          result=$(./grondig --post-db ./post.db < "$request_file")
         fi
 
         echo "$result"
 
+        echo "$result" > grondig-result.json
+        echo "result-file=grondig-result.json" >> $GITHUB_OUTPUT
         echo 'result<<EOF' >> $GITHUB_OUTPUT
         echo "$result" >> $GITHUB_OUTPUT
         echo 'EOF' >> $GITHUB_OUTPUT
