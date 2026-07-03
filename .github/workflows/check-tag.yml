@@ -8,18 +8,27 @@ on:
         description: 'Kernel version tag'
         required: true
         type: string
+      url:
+        description: "Grondig endpoint url"
+        required: false
+        type: string
+        default: ''
   workflow_call:
     inputs:
       tag:
         required: true
         type: string
+      url:
+        required: false
+        type: string
+        default: ''
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER != '' && fromJSON(vars.RUNNER) || 'ubuntu-latest' }}
     permissions:
       contents: read
 
@@ -36,6 +45,7 @@ jobs:
       id: check
       with:
         request: ${{ steps.build.outputs.request }}
+        url: ${{ inputs.url }}
 
     - name: Create summary
       run: |

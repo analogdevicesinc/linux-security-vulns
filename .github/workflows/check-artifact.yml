@@ -15,6 +15,11 @@ on:
         type: choice
         options:
         - adi/linux
+      url:
+        description: "Grondig endpoint url"
+        required: false
+        type: string
+        default: ''
   workflow_call:
     inputs:
       ref:
@@ -24,6 +29,10 @@ on:
         required: false
         type: string
         default: 'adi/linux'
+      url:
+        required: false
+        type: string
+        default: ''
     secrets:
       NVD_API_KEY:
         required: false
@@ -42,7 +51,7 @@ env:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER != '' && fromJSON(vars.RUNNER) || 'ubuntu-latest' }}
     permissions:
       contents: read
       id-token: write
@@ -148,6 +157,7 @@ jobs:
       id: check
       with:
         request: ${{ steps.build.outputs.request }}
+        url: ${{ inputs.url }}
 
     - name: Create summary
       run: |

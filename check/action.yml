@@ -3,8 +3,11 @@ description: Run grondig
 
 inputs:
   request:
-    description: "query entries in json"
+    description: "Query entries in json"
     required: true
+  url:
+    description: "Grondig endpoint url"
+    default: ''
   gh-token:
     description: "GitHub Token"
     default: ${{ github.token }}
@@ -19,6 +22,7 @@ runs:
   steps:
     - name: Get tools and databases
       shell: bash
+      if: ${{ inputs.url == '' }}
       run: |
         curl -sL -H "Authorization: Bearer ${{ inputs.gh-token }}" -o post.db.xz \
             https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest/post.db.xz
@@ -34,12 +38,17 @@ runs:
       run: |
         [[ "${{ runner.debug }}" == "1" ]] && set -x
 
-        result=$(printf '%s' '${{ inputs.request }}' | \
-            ./grondig --post-db ./post.db)
+        if [[ -n "${{ inputs.url }}" ]]; then
+          result=$(curl -sS -k "${{ inputs.url }}" \
+            -H 'Content-Type: application/json' \
+            -d '${{ inputs.request }}')
+        else
+          result=$(printf '%s' '${{ inputs.request }}' | \
+              ./grondig --post-db ./post.db)
+        fi
 
         echo "$result"
 
         echo 'result<<EOF' >> $GITHUB_OUTPUT
         echo "$result" >> $GITHUB_OUTPUT
         echo 'EOF' >> $GITHUB_OUTPUT
-
