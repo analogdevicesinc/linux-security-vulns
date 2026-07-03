@@ -2067,9 +2067,12 @@
     "CVE-2026-53317",
     "CVE-2026-53320",
     "CVE-2026-53321",
+    "CVE-2026-53337",
     "CVE-2026-53341",
     "CVE-2026-53343",
+    "CVE-2026-53345",
     "CVE-2026-53349",
+    "CVE-2026-53350",
     "CVE-2026-53352",
     "CVE-2026-53354"
   ],
@@ -4145,6 +4148,9 @@
     null,
     null,
     null,
+    null,
+    null,
+    null,
     null
   ],
   "summary": [
@@ -5607,6 +5613,9 @@
     null,
     null,
     "xen/privcmd: restrict usage in unprivileged domU",
+    null,
+    null,
+    null,
     null,
     null,
     null,
