@@ -1,0 +1,116 @@
+name: Linux CVE artifact scan
+run-name: Linux CVE artifact scan ${{ inputs.repository }}@${{ inputs.ref }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      organization:
+        description: "Organization"
+        type: choice
+        options:
+        - adi-innersource
+        - analogdevicesinc
+      repository:
+        description: "Repository"
+        type: choice
+        options:
+        - linux
+      ref:
+        description: "The branch, tag, SHA to resolve"
+        required: true
+        type: string
+        default: 'refs/heads/main'
+      url:
+        description: "Grondig endpoint url"
+        required: false
+        type: string
+        default: ''
+      sca-project:
+        description: "SCA project uuid or url"
+        required: false
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      organization:
+        required: true
+        type: string
+      repository:
+        required: true
+        type: string
+      ref:
+        required: true
+        type: string
+      url:
+        required: false
+        type: string
+        default: ''
+      sca-project:
+        required: false
+        type: string
+        default: ''
+    secrets:
+      CLOUDSMITH_API_KEY:
+        required: false
+      CLOUDSMITH_SERVICE_SLUG:
+        required: false
+      SCA_AUTH_TOKEN:
+        required: false
+
+jobs:
+  adapter:
+    name: Adjust inputs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      repository: ${{ steps.adapter.outputs.repository }}
+      ref: ${{ steps.adapter.outputs.ref }}
+    steps:
+      - name:
+        id: adapter
+        run: |
+          repository="${{ inputs.repository }}"
+          [[ "${{ inputs.organization }}" == "adi-innersource" ]] && repository="$repository-internal" || :
+
+          ref="${{ inputs.ref }}"
+          [[ "$ref" == "refs/heads/xlnx-main" ]] && ref="refs/heads/main" || :
+
+          echo "repository=adi/$repository" >> $GITHUB_OUTPUT
+          echo "ref=$ref" >> $GITHUB_OUTPUT
+
+  check:
+    name: CVE artifact scan
+    uses: analogdevicesinc/linux-security-vulns/.github/workflows/check-artifact.yml@ci
+    needs: adapter
+    with:
+      repository: ${{ needs.adapter.outputs.repository }}
+      ref: ${{ needs.adapter.outputs.ref }}
+      url: ${{ inputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      CLOUDSMITH_SERVICE_SLUG: ${{ secrets.CLOUDSMITH_SERVICE_SLUG }}
+
+  sca-vulns:
+    name: Sync with SCA
+    runs-on: ubuntu-latest
+    needs: check
+    if: ${{ inputs.sca-project != '' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Sync grondig results with SCA
+        env:
+          SCA_AUTH_TOKEN: ${{ secrets.SCA_AUTH_TOKEN }}
+        run: |
+          printf '%s' '${{ needs.check.outputs.result }}' | \
+            python3 .github/scripts/linux2sca.py \
+              --url     https://sca.example.com \
+              --token   "${SCA_AUTH_TOKEN}" \
+              --project "${{ inputs.sca-project }}"
