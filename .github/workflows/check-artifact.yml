@@ -98,7 +98,7 @@ jobs:
 
         source ci/download_artifacts.sh
 
-        download_artifacts "${{ inputs.ref }}" "${{ inputs.repository }}" "true"
+        download_artifacts "${{ inputs.ref }}" "${{ inputs.repository }}"
 
         context="$(find raw -name context.txt | head -1)"
         [[ -n "$context" ]] || { echo "::error ::get-articats: failed to find context.txt" ; exit 1 ; }
