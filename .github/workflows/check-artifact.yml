@@ -155,6 +155,20 @@ jobs:
         request-file: grondig-request.json
         url: ${{ inputs.url }}
 
+    - name: Create SARIF
+      run: |
+        curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o grondig-to-sarif.py \
+          https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/ci/grondig-to-sarif.py
+        python3 grondig-to-sarif.py grondig-result.json grondig.sarif \
+          "${{ inputs.repository }}" "${{ inputs.ref }}" \
+          "${{ steps.get-artifacts.outputs.sha }}"
+
+    - name: Upload SARIF
+      uses: actions/upload-artifact@v4
+      with:
+        name: grondig-sarif
+        path: grondig.sarif
+
     - name: Create summary
       run: |
         [[ "${{ runner.debug }}" == "1" ]] && set -x
@@ -164,7 +178,7 @@ jobs:
         echo "## CVEs in $tag per defconfig" >> $GITHUB_STEP_SUMMARY
         echo "$result" | jq -c 'to_entries[]' | while IFS= read -r entry; do
           file=$(echo "$entry" | jq -r '.key')
-          cves=$(echo "$entry" | jq -c '.value.cves')
+          cves=$(echo "$entry" | jq -c '[.value[][]] | unique')
           len=$(echo "$cves" | jq length)
 
           echo "### $file: $len" >> $GITHUB_STEP_SUMMARY

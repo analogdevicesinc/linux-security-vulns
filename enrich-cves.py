@@ -67,8 +67,9 @@ for ref in refs:
         json_ = json.load(f)
         if 'result' not in json_:
             continue
-        for entry in json_['result'].values():
-            cves.update(entry.get('cves', []))
+        for files in json_['result'].values():
+            for file_cves in files.values():
+                cves.update(file_cves)
 cves = sorted(cves)
 
 scores = {c: None for c in cves}
