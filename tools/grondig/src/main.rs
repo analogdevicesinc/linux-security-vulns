@@ -15,7 +15,7 @@
 //   }
 //
 // Reply format:
-//   { "<uid>": { "cves": ["CVE-XXXX-YYYY", ...] }, ... }
+//   { "<uid>": { "<file>": ["CVE-XXXX-YYYY", ...] }, ... }
 //
 // "grondig" means "thorough" in Dutch.
 //
@@ -24,9 +24,9 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -178,11 +178,6 @@ struct SbomEntry {
     compiled_files: Vec<String>,
 }
 
-#[derive(Serialize)]
-struct CveResult {
-    cves: Vec<String>,
-}
-
 struct PostDb {
     conn: Connection,
 }
@@ -219,29 +214,16 @@ impl PostDb {
             .collect()
     }
 
-    /// Returns true if this CVE has any file entries in the files table.
-    fn cve_has_any_files(&self, cve: &str) -> bool {
-        let count: i64 = self
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM files WHERE cve=?1",
-                [cve],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-        count > 0
-    }
-
-    /// Returns true if any file for this CVE is in `compiled_files`.
-    fn cve_matches_files(&self, cve: &str, compiled_files: &HashSet<&str>) -> bool {
+    /// Returns affected source files for a CVE.
+    fn files_for(&self, cve: &str) -> Vec<String> {
         let mut stmt = self
             .conn
-            .prepare("SELECT file FROM files WHERE cve=?1")
-            .expect("prepare cve_matches_files");
+            .prepare("SELECT file FROM files WHERE cve=?1 ORDER BY file")
+            .expect("prepare files_for");
         stmt.query_map([cve], |row| row.get::<_, String>(0))
-            .expect("query cve_matches_files")
+            .expect("query files_for")
             .flatten()
-            .any(|f| compiled_files.contains(f.as_str()))
+            .collect()
     }
 
     /// Returns the kernel release version for a SHA, or "" if not found.
@@ -321,31 +303,30 @@ fn is_cve_unfixed(
     !fixed
 }
 
-/// Compute the list of unfixed CVEs for one SBOM entry.
+/// Compute unfixed CVEs grouped by affected compiled source file.
 fn compute_cves(
     post_db: &PostDb,
     stable_tag: &str,
     cherry_picked: &[String],
     compiled_files: &[String],
-) -> Vec<String> {
+) -> BTreeMap<String, Vec<String>> {
     let target = stable_tag.strip_prefix('v').unwrap_or(stable_tag);
     let cherry_picks = expand_cherry_picks(cherry_picked, post_db);
     let files_set: HashSet<&str> = compiled_files.iter().map(String::as_str).collect();
+    let mut result: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
-    post_db
+    for cve in post_db
         .all_cves()
         .into_iter()
         .filter(|cve| is_cve_unfixed(post_db, cve, target, &cherry_picks))
-        .filter(|cve| {
-            if files_set.is_empty() {
-                return true;
+    {
+        for file in post_db.files_for(&cve) {
+            if files_set.is_empty() || files_set.contains(file.as_str()) {
+                result.entry(file).or_default().push(cve.clone());
             }
-            if !post_db.cve_has_any_files(cve) {
-                return true;
-            }
-            post_db.cve_matches_files(cve, &files_set)
-        })
-        .collect()
+        }
+    }
+    result
 }
 
 fn find_post_db() -> Result<PathBuf> {
@@ -381,15 +362,15 @@ fn main() -> Result<()> {
     let post_db = PostDb::open(&post_db_path)?;
 
     // Process each SBOM entry and build the reply.
-    let mut reply: HashMap<String, CveResult> = HashMap::new();
+    let mut reply = BTreeMap::new();
     for (uid, entry) in &request {
-        let cves = compute_cves(
+        let files = compute_cves(
             &post_db,
             &entry.stable_tag,
             &entry.cherry_picked,
             &entry.compiled_files,
         );
-        reply.insert(uid.clone(), CveResult { cves });
+        reply.insert(uid.clone(), files);
     }
 
     println!("{}", serde_json::to_string_pretty(&reply)?);
