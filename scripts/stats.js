@@ -3,15 +3,15 @@
 import { WaitEvent } from '@shared/scripts/event.js'
 import { DOM } from '@shared/scripts/dom.js'
 
-const LTS_COLORS = {
-  '5.10': 'rgba(220, 60, 60,0.8)',
-  '5.15': 'rgba(230,140, 30,0.8)',
-  '6.1':  'rgba(200,190, 30,0.8)',
-  '6.6':  'rgba( 50,180, 80,0.8)',
-  '6.12': 'rgba( 40,140,220,0.8)',
-  '6.18': 'rgba(130, 70,200,0.8)',
-  '7.0':  'rgba(180, 60,180,0.8)',
-}
+const SERIES_COLORS = [
+  'rgba(220, 60, 60,0.8)',
+  'rgba(230,140, 30,0.8)',
+  'rgba(200,190, 30,0.8)',
+  'rgba( 50,180, 80,0.8)',
+  'rgba( 40,140,220,0.8)',
+  'rgba(130, 70,200,0.8)',
+  'rgba(180, 60,180,0.8)',
+]
 
 function versionKey (r) {
   return r.split(/[.\-]/).filter(s => /^\d+$/.test(s)).map(Number)
@@ -159,25 +159,37 @@ class Stats {
     const stats = DOM.get('#security-stats', this.$.body)
     if (!stats) return
 
-    // Group releases by LTS series
-    const series = {}
-    for (const tag of Object.keys(tags)) {
-      const lts = Object.keys(LTS_COLORS).find(l => tag === l || tag.startsWith(l + '.'))
-      if (!lts) continue
-      ;(series[lts] ??= []).push(tag)
+    const seriesInfo = tags._series || {}
+    const tagNames = Object.keys(tags).filter(tag => tag !== '_series')
+    if (Object.keys(seriesInfo).length === 0) {
+      for (const tag of tagNames) {
+        const match = tag.match(/^(\d+\.\d+)/)
+        if (match) seriesInfo[match[1]] = ''
+      }
     }
 
-    // Sort each series by version, right-align so newest releases line up
+    const series = {}
+    for (const tag of tagNames) {
+      const base = Object.keys(seriesInfo).find(
+        series => tag === series || tag.startsWith(series + '.')
+      )
+      if (!base) continue
+      ;(series[base] ??= []).push(tag)
+    }
+
     const maxLen = Math.max(...Object.values(series).map(r => r.length))
     const datasets = []
-    for (const [lts, rels] of Object.entries(series).sort((a, b) => versionCmp(a[0], b[0]))) {
+    const sortedSeries = Object.entries(series).sort((a, b) => versionCmp(a[0], b[0]))
+    for (const [index, [base, rels]] of sortedSeries.entries()) {
       rels.sort(versionCmp)
       const offset = maxLen - rels.length
+      const stable = seriesInfo[base] === 'stable'
+      const color = SERIES_COLORS[index % SERIES_COLORS.length]
       datasets.push({
-        label: lts,
+        label: stable ? `${base} (stable)` : base,
         data: rels.map((r, i) => ({ x: i + offset, y: tags[r], label: r })),
-        backgroundColor: LTS_COLORS[lts] || 'rgba(132,139,149,0.8)',
-        borderColor: (LTS_COLORS[lts] || 'rgba(132,139,149,0.8)').replace(/[\d.]+\)$/, '1)'),
+        backgroundColor: color,
+        borderColor: color.replace(/[\d.]+\)$/, '1)'),
         showLine: true,
         tension: 0.3,
         pointRadius: 5,
@@ -195,7 +207,7 @@ class Stats {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          title: { display: true, text: 'Unfixed CVEs per LTS stable release' },
+          title: { display: true, text: 'Unfixed CVEs per supported kernel release' },
           tooltip: { callbacks: { label: (item) => `${item.raw.label}: ${item.raw.y} CVEs` } },
         },
         scales: {
