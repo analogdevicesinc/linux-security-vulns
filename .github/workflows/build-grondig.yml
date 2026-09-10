@@ -1,0 +1,39 @@
+name: Build grondig
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: Architecture to build
+        required: true
+        type: choice
+        options:
+        - amd64
+        - arm64
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  build:
+    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-26.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: feature/grondig
+
+    - uses: actions-rust-lang/setup-rust-toolchain@v1.0.6
+
+    - name: Build grondig
+      run: cargo build --release --manifest-path tools/Cargo.toml --bin grondig
+
+    - name: Upload latest asset
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: >-
+        gh release upload latest
+        tools/target/release/grondig#grondig-${{ inputs.architecture }}
+        --clobber
