@@ -36,7 +36,20 @@ fn grondig(request: &Value) -> Value {
     serde_json::from_slice(&out).expect("valid JSON reply")
 }
 
-/// Shorthand: returns the CVE list for a single-entry request.
+fn cves_in(files: &Value) -> Vec<String> {
+    let mut cves: Vec<String> = files
+        .as_object()
+        .expect("file object")
+        .values()
+        .flat_map(|value| value.as_array().expect("cves array"))
+        .map(|value| value.as_str().expect("CVE string").to_string())
+        .collect();
+    cves.sort();
+    cves.dedup();
+    cves
+}
+
+/// Shorthand: returns the unique CVEs for a single-entry request.
 fn cves_for(stable_tag: &str, cherry_picked: &[&str], compiled_files: &[&str]) -> Vec<String> {
     let reply = grondig(&json!({
         "test": {
@@ -45,10 +58,7 @@ fn cves_for(stable_tag: &str, cherry_picked: &[&str], compiled_files: &[&str]) -
             "compiled-files": compiled_files,
         }
     }));
-    let mut cves: Vec<String> = serde_json::from_value(reply["test"]["cves"].clone())
-        .expect("cves array");
-    cves.sort();
-    cves
+    cves_in(&reply["test"])
 }
 
 #[test]
@@ -116,17 +126,24 @@ fn cve_unfixed_in_earlier_version() {
     );
 }
 
-// Reply contains the expected JSON structure (uid → cves array).
+// Reply contains the expected JSON structure (uid → file → CVE array).
 #[test]
-fn reply_contains_cves_key() {
+fn reply_groups_cves_by_file() {
+    let file = "drivers/bluetooth/btintel_pcie.c";
     let reply = grondig(&json!({
         "my-sbom": {
-            "stable-tag": "v6.12",
+            "stable-tag": "v6.11",
             "cherry-picked": [],
-            "compiled-files": [],
+            "compiled-files": [file],
         }
     }));
-    assert!(reply["my-sbom"]["cves"].is_array(), "reply must have a 'cves' array");
+    assert!(reply["my-sbom"][file].is_array(), "file must have a CVE array");
+    assert!(
+        reply["my-sbom"][file]
+            .as_array()
+            .unwrap()
+            .contains(&json!("CVE-2024-46869"))
+    );
 }
 
 // Providing the mainline fix SHA for CVE-2024-46869 via cherry-picked should
@@ -215,8 +232,7 @@ fn full_sbom_chain_returns_valid_cve_list() {
         }
     }));
 
-    let cves: Vec<String> = serde_json::from_value(reply[uid]["cves"].clone())
-        .expect("cves array from full SBOM chain");
+    let cves = cves_in(&reply[uid]);
     // The filtered list must be a strict subset of the unfiltered list.
     let unfiltered = cves_for("v6.12.5", &[], &[]);
     for cve in &cves {
@@ -250,10 +266,8 @@ fn multiple_sbom_entries_are_independent() {
         }
     }));
 
-    let cves_a: Vec<String> =
-        serde_json::from_value(reply["sbom-a"]["cves"].clone()).unwrap();
-    let cves_b: Vec<String> =
-        serde_json::from_value(reply["sbom-b"]["cves"].clone()).unwrap();
+    let cves_a = cves_in(&reply["sbom-a"]);
+    let cves_b = cves_in(&reply["sbom-b"]);
 
     // 6.11 should have more unfixed CVEs than 6.12 (older release).
     assert!(
