@@ -22,7 +22,7 @@ import uvicorn
 
 logger = logging.getLogger("pygrondig")
 
-GRONDIG_URL = "https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest/grondig"
+GRONDIG_URL = "https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest/grondig-amd64"
 POSTDB_URL = "https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest/post.db.xz"
 
 

@@ -42,7 +42,7 @@ The artifacts from the build step are stored in three stable URLs:
 
 - https://github.com/sashalevin/verhaal/releases/download/db-latest/verhaal.db.xz
 - https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest/post.db.xz
-- https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest/grondig
+- https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest/grondig-amd64
 
 The Vulns CVE data is obtained from https://git.kernel.org/pub/scm/linux/security/vulns.git,
 (sparse-checkout ``./cve``).
