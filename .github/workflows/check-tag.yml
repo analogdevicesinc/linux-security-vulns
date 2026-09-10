@@ -50,7 +50,7 @@ jobs:
     - name: Create summary
       run: |
         result='${{ steps.check.outputs.result }}'
-        cves=$(echo "$result" | jq --arg tag "${{ inputs.tag }}" '.[$tag].cves')
+        cves=$(echo "$result" | jq --arg tag "${{ inputs.tag }}" '[.[$tag][][]] | unique')
         len=$(echo "$cves" | jq length)
 
         echo "## CVEs in ${{ inputs.tag }}: $len" >> $GITHUB_STEP_SUMMARY

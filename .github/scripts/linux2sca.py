@@ -73,9 +73,9 @@ def merge_cves_from_defconfigs(data):
     If in your CSA you have versions for each defconfig,
     don't use this method."""
     cves = set()
-    for entry in data.values():
-        for cve in entry.get("cves", []):
-            cves.add(cve)
+    for files in data.values():
+        for file_cves in files.values():
+            cves.update(file_cves)
     return cves
 
 

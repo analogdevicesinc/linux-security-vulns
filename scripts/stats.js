@@ -35,6 +35,10 @@ function scoreColor (score, count, maxCount, alpha = 0.65) {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
+function entryCves (files) {
+  return [...new Set(Object.values(files).flat())]
+}
+
 function cvssScore (vector) {
   if (!vector) return null
   try {
@@ -70,14 +74,15 @@ class Stats {
     const defconfigs = [...new Set(refs.flatMap(r => Object.keys(r.result)))]
 
 
-    const maxCount = Math.max(...refs.flatMap(ref => Object.values(ref.result).map(e => e.cves.length)))
+    const maxCount = Math.max(...refs.flatMap(ref => Object.values(ref.result).map(e => entryCves(e).length)))
     const scorePoints = [], scoreColors = [], scoreBorders = []
     refs.forEach((ref, ri) => {
       defconfigs.forEach((defconfig, di) => {
         const entry = ref.result[defconfig]
         if (!entry) return
-        const count = entry.cves.length
-        const scored = entry.cves.map(cve => scoreMap.get(cve)).filter(s => s != null)
+        const cves = entryCves(entry)
+        const count = cves.length
+        const scored = cves.map(cve => scoreMap.get(cve)).filter(s => s != null)
         const avg = scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : null
         scorePoints.push({ x: ri, y: di, r: Math.max(2, Math.sqrt(count) * 1.5), avgScore: avg })
         scoreColors.push(scoreColor(avg, count, maxCount))
@@ -119,7 +124,7 @@ class Stats {
     })
 
     // Severity distribution
-    const allCves = new Set(refs.flatMap(ref => Object.values(ref.result).flatMap(e => e.cves)))
+    const allCves = new Set(refs.flatMap(ref => Object.values(ref.result).flatMap(entryCves)))
     const buckets = { High: 0, Medium: 0, Low: 0, Unrated: 0 }
     allCves.forEach(cve => {
       const s = scoreMap.get(cve)
@@ -275,6 +280,7 @@ class Stats {
       ])
 
       for (const [key, value] of Object.entries(result.value.data.result)) {
+        const artifactCves = entryCves(value)
 
         let entry = DOM.new('div', {
           className: 'collapsible',
@@ -289,7 +295,7 @@ class Stats {
             textContent: key
           }),
           DOM.new('p', {
-            textContent: `${value.cves.length} vulnerabilities`
+            textContent: `${artifactCves.length} vulnerabilities`
           })
         ])
         label.append(...[
@@ -327,7 +333,7 @@ class Stats {
         ])
 
         let cves = []
-        for (const cve of value.cves) {
+        for (const cve of artifactCves) {
           cves.push(DOM.new('a', {
             className: 'entry',
             href: `https://nvd.nist.gov/vuln/detail/${cve}`,

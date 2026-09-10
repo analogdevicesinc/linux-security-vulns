@@ -105,14 +105,15 @@ And outputs in the JSON format:
 
    {
      "<uid>": {
-       "cves": ["<cve-id>"]
+       "<file>": ["<cve-id>"]
      }
    }
 
 Where:
 
 - ``uid``: The unique identifier.
-- ``cves``: List of CVE IDs, such as ``CVE-2026-31431``.
+- ``file``: A compiled source file affected by the listed CVEs.
+- ``cve-id``: A CVE ID, such as ``CVE-2026-31431``.
 
 Therefore, grondig is meant to be an extension to tools such as
 `grype <https://github.com/anchore/grype>`__, filling the gap of monitoring

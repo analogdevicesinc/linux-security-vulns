@@ -164,7 +164,7 @@ jobs:
         echo "## CVEs in $tag per defconfig" >> $GITHUB_STEP_SUMMARY
         echo "$result" | jq -c 'to_entries[]' | while IFS= read -r entry; do
           file=$(echo "$entry" | jq -r '.key')
-          cves=$(echo "$entry" | jq -c '.value.cves')
+          cves=$(echo "$entry" | jq -c '[.value[][]] | unique')
           len=$(echo "$cves" | jq length)
 
           echo "### $file: $len" >> $GITHUB_STEP_SUMMARY
