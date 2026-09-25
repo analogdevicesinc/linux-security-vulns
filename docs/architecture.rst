@@ -89,7 +89,7 @@ Demo: CRYPTO_DEV_IXP4XX -> ixp4xx_crypto.c
       }
     }'| ./grondig
 
-.. code:: comment
+::
 
     {
       "my-demo": {
