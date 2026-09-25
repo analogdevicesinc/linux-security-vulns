@@ -54,7 +54,7 @@ The Vulns CVE data is obtained from https://git.kernel.org/pub/scm/linux/securit
    the pipelines.
 
 :ref:`grondig` is a tool for querying CVEs for a SBOM. To obtain the summary
-and score of the CVEs, the check step also has an enrichment job that combines:
+and score of the CVEs, use enrichment sources such as:
 
 - | https://storage.googleapis.com/osv-vulnerabilities/Linux/all.zip
   | Daily `OSV <https://osv.dev>`__ schema entries for the 'Linux' ecosystem.
@@ -228,7 +228,6 @@ Two check workflows are provided:
   produce the same CVE list.
 - **CVE artifact scan** (``check-artifact.yml``): downloads build artifacts
   from a S3 storage to collect SBOMs, format and queries grondig.
-  The results are enriched and deployed.
 
 Both workflows share the :git+linux-security-vulns:`ci:check/action.yml`
 composite action

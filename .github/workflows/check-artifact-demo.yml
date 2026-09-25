@@ -1,7 +1,6 @@
-name: CVE artifact scan (score demo)
-run-name: CVE artifact scan (score demo) ${{ inputs.repository }}@${{ inputs.ref }}
-# This is a DEMO workflow, at scale, you maintain, post.db, and nvd cve'
-# as proper databases and query them directly.
+name: CVE artifact scan (demo)
+run-name: CVE artifact scan (demo) ${{ inputs.repository }}@${{ inputs.ref }}
+# This is a DEMO workflow; at scale, maintain post.db as a database.
 
 on:
   workflow_dispatch:
@@ -61,20 +60,6 @@ jobs:
         rm result.json
 
         ls refs-*.json | jq -nR '[inputs]' > refs.json
-
-    - name: Build scores file
-      # DEMO step, you should have a db table with the CVEs scores.
-      env:
-        NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-      run: |
-        # Build scores file
-        enrich_cves=$(mktemp -t check.XXX.py)
-        all_zip=$(mktemp -t all.XXX.zip)
-        curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o "$enrich_cves" \
-            https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/ci/enrich-cves.py
-        [ -f scores.json ] || echo '{}' > scores.json
-        python3 "$enrich_cves" "scores.json"
-        rm "$enrich_cves"
 
     - name: Commit
       run: |

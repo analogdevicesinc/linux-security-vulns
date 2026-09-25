@@ -34,8 +34,6 @@ on:
         type: string
         default: ''
     secrets:
-      NVD_API_KEY:
-        required: false
       CLOUDSMITH_API_KEY:
         required: false
       CLOUDSMITH_SERVICE_SLUG:
