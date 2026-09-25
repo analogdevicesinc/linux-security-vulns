@@ -11,7 +11,7 @@
     <link rel="stylesheet" type="text/css" href="_static/app.min.css?v=fb8972a4" />
     <link rel="stylesheet" type="text/css" href="_static/custom.min.css?v=18b1612a" />
     <script async="async" src="_static/app.umd.js?v=8c78863f"></script>
-    <script async="async" src="_static/custom.umd.js?v=6fa59bd8"></script>
+    <script async="async" src="_static/custom.umd.js?v=03b864c1"></script>
     <link rel="icon" href="_static/icon.svg"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -95,6 +95,7 @@
         <nav>
           <ul>
 <li><a class="reference internal" href="#">Architecture</a><ul>
+<li><a class="reference internal" href="#quick-start">Quick start</a></li>
 <li><a class="reference internal" href="#benefits">Benefits</a></li>
 <li><a class="reference internal" href="#grondig">Grondig</a></li>
 <li><a class="reference internal" href="#strak">Strak</a></li>
@@ -197,7 +198,7 @@ mirror the OSV, NVD, and other sources instead of fetching <strong>every time</s
 the pipelines.</p>
 </div>
 <p><a class="reference internal" href="#grondig"><span class="std std-ref">Grondig</span></a> is a tool for querying CVEs for a SBOM. To obtain the summary
-and score of the CVEs, the check step also has an enrichment job that combines:</p>
+and score of the CVEs, use enrichment sources such as:</p>
 <ul>
 <li><div class="line-block">
 <div class="line"><a class="icon link reference external" href="https://storage.googleapis.com/osv-vulnerabilities/Linux/all.zip" target="_blank">https://storage.googleapis.com/osv-vulnerabilities/Linux/all.zip</a></div>
@@ -209,6 +210,74 @@ and score of the CVEs, the check step also has an enrichment job that combines:<
 </div>
 </li>
 </ul>
+<section id="quick-start">
+<span id="id1"></span><h2>Quick start<a class="headerlink" href="#quick-start" title="Link to this heading"></a></h2>
+<p>Obtain the tool <code class="docutils literal notranslate"><span class="pre">grondig</span></code> and the daily database <code class="docutils literal notranslate"><span class="pre">post.db</span></code>:</p>
+<div class="code-shell"><div><div class="no-select float-left highlight-default notranslate"><div class="highlight"><pre><span></span>~$
+</pre></div>
+</div>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">base_url</span><span class="o">=</span>https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest
+</pre></div>
+</div>
+<div class="clear-left"></div></div><div><div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Fetch tool</span>
+</pre></div>
+</div>
+<div class="clear-left"></div></div><div><div class="no-select float-left highlight-default notranslate"><div class="highlight"><pre><span></span>~$
+</pre></div>
+</div>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>curl<span class="w"> </span>-L<span class="w"> </span><span class="s2">"</span><span class="nv">$base_url</span><span class="s2">/grondig-amd64"</span><span class="w"> </span>-o<span class="w"> </span>grondig<span class="w"> </span><span class="p">;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span><span class="nv">$_</span>
+</pre></div>
+</div>
+<div class="clear-left"></div></div><div><div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Fetch daily database</span>
+</pre></div>
+</div>
+<div class="clear-left"></div></div><div><div class="no-select float-left highlight-default notranslate"><div class="highlight"><pre><span></span>~$
+</pre></div>
+</div>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>curl<span class="w"> </span>-L<span class="w"> </span><span class="s2">"</span><span class="nv">$base_url</span><span class="s2">/post.db.xz"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>xz<span class="w"> </span>-d<span class="w"> </span>&gt;<span class="w"> </span>post.db
+</pre></div>
+</div>
+<div class="clear-left"></div></div></div><p>Check compiled files in a version
+Demo: CRYPTO_DEV_IXP4XX -&gt; ixp4xx_crypto.c</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">echo</span><span class="w"> </span><span class="s1">'{</span>
+<span class="s1">  "my-demo": {</span>
+<span class="s1">    "stable-tag": "v6.12.110",</span>
+<span class="s1">     "compiled-files": [</span>
+<span class="s1">       "drivers/crypto/intel/ixp4xx/ixp4xx_crypto.c"</span>
+<span class="s1">     ]</span>
+<span class="s1">  }</span>
+<span class="s1">}'</span><span class="p">|</span><span class="w"> </span>./grondig
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+  <span class="s2">"my-demo"</span><span class="p">:</span> <span class="p">{</span>
+    <span class="s2">"cves"</span><span class="p">:</span> <span class="p">[</span>
+      <span class="s2">"CVE-2026-97506"</span>
+    <span class="p">]</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>To obtain the list of the compiled files, you can, at your kernel build tree:</p>
+<ul class="simple">
+<li><p>Extract from the SBOM created with  <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">sbom</span></code>; or</p></li>
+<li><p>Run <code class="docutils literal notranslate"><span class="pre">./scripts/clang-tools/gen_compile_commands.py</span></code> to generate <code class="docutils literal notranslate"><span class="pre">compile_commands.json</span></code>,
+then:</p></li>
+</ul>
+<div class="code-shell"><div><div class="no-select float-left highlight-default notranslate"><div class="highlight"><pre><span></span>~$
+</pre></div>
+</div>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cat<span class="w"> </span>compile_commands.json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">'.[].file'</span>
+</pre></div>
+</div>
+<div class="clear-left"></div></div><div><div class="no-select highlight-text notranslate"><div class="highlight"><pre><span></span> ...
+ /path/to/linux/lib/bcd.c
+ /path/to/linux/lib/bitmap-str.c
+ /path/to/linux/lib/bitmap.c
+ ...
+</pre></div>
+</div>
+<div class="clear-left"></div></div></div></section>
 <section id="benefits">
 <h2>Benefits<a class="headerlink" href="#benefits" title="Link to this heading"></a></h2>
 <p>This pipeline focus on batch checking SBOMs with minimal databases, <cite>grondig</cite> is
@@ -219,7 +288,7 @@ and “Vulns CVE Data” (~350MB). It also requires external scripting for cherr
 and one <cite>strak</cite> instance per SBOM-check.</p>
 </section>
 <section id="grondig">
-<span id="id1"></span><h2>Grondig<a class="headerlink" href="#grondig" title="Link to this heading"></a></h2>
+<span id="id2"></span><h2>Grondig<a class="headerlink" href="#grondig" title="Link to this heading"></a></h2>
 <p><a class="icon git reference external" href="https://github.com/analogdevicesinc/linux-security-vulns/tree/feature/grondig/tools/grondig" target="_blank">Grondig</a> is a tool
 similar to <a class="reference internal" href="#strak"><span class="std std-ref">Strak</span></a> but to batch check kernel image SBOMs for CVEs and is
 meant for <em>consumers</em> of the Linux Kernel. It takes JSON as stdin in the
@@ -259,7 +328,7 @@ format:</p>
 Linux Kernel image builds.</p>
 </section>
 <section id="strak">
-<span id="id2"></span><h2>Strak<a class="headerlink" href="#strak" title="Link to this heading"></a></h2>
+<span id="id3"></span><h2>Strak<a class="headerlink" href="#strak" title="Link to this heading"></a></h2>
 <p><a class="icon link reference external" href="https://git.kernel.org/pub/scm/linux/security/vulns.git/tree/tools/strak" target="_blank">Strak</a>
 is a tool to dig the CVE database and either show what CVEs are fixed for
 a specific release, or what CVEs are still vulnerable for a specific commit.
@@ -303,8 +372,7 @@ vulnerability management system.</p>
 all CVEs affecting that release. In this context, grondig and strak should
 produce the same CVE list.</p></li>
 <li><p><strong>CVE artifact scan</strong> (<code class="docutils literal notranslate"><span class="pre">check-artifact.yml</span></code>): downloads build artifacts
-from a S3 storage to collect SBOMs, format and queries grondig.
-The results are enriched and deployed.</p></li>
+from a S3 storage to collect SBOMs, format and queries grondig.</p></li>
 </ul>
 <p>Both workflows share the <a class="icon git reference external" href="https://github.com/analogdevicesinc/linux-security-vulns/tree/ci/check/action.yml" target="_blank">check/action.yml</a>
 composite action</p>
@@ -319,9 +387,9 @@ branches, correlating them with their kernel release, mainline upstream SHA,
 revert and fix relationships. Also tracks known releases and version ranges,
 a SHA1 correction map for malformed <code class="docutils literal notranslate"><span class="pre">Fixes:</span></code> tags, and database metadata.</p>
 <p>Data source: <a class="icon link reference external" href="https://git.kernel.org/pub/scm/linux/kernel/" target="_blank">https://git.kernel.org/pub/scm/linux/kernel/</a></p>
-<div class="table-wrapper colwidths-given docutils container" id="id3">
-<table class="docutils align-default" id="id3">
-<caption><span class="caption-text">commits</span><a class="headerlink" href="#id3" title="Link to this table"></a></caption>
+<div class="table-wrapper colwidths-given docutils container" id="id4">
+<table class="docutils align-default" id="id4">
+<caption><span class="caption-text">commits</span><a class="headerlink" href="#id4" title="Link to this table"></a></caption>
 <colgroup>
 <col style="width: 20.0%" />
 <col style="width: 15.0%" />
@@ -361,9 +429,9 @@ a SHA1 correction map for malformed <code class="docutils literal notranslate"><
 </tbody>
 </table>
 </div>
-<div class="table-wrapper colwidths-given docutils container" id="id4">
-<table class="docutils align-default" id="id4">
-<caption><span class="caption-text">releases</span><a class="headerlink" href="#id4" title="Link to this table"></a></caption>
+<div class="table-wrapper colwidths-given docutils container" id="id5">
+<table class="docutils align-default" id="id5">
+<caption><span class="caption-text">releases</span><a class="headerlink" href="#id5" title="Link to this table"></a></caption>
 <colgroup>
 <col style="width: 20.0%" />
 <col style="width: 15.0%" />
@@ -387,9 +455,9 @@ a SHA1 correction map for malformed <code class="docutils literal notranslate"><
 </tbody>
 </table>
 </div>
-<div class="table-wrapper colwidths-given docutils container" id="id5">
-<table class="docutils align-default" id="id5">
-<caption><span class="caption-text">ranges</span><a class="headerlink" href="#id5" title="Link to this table"></a></caption>
+<div class="table-wrapper colwidths-given docutils container" id="id6">
+<table class="docutils align-default" id="id6">
+<caption><span class="caption-text">ranges</span><a class="headerlink" href="#id6" title="Link to this table"></a></caption>
 <colgroup>
 <col style="width: 20.0%" />
 <col style="width: 15.0%" />
@@ -417,9 +485,9 @@ a SHA1 correction map for malformed <code class="docutils literal notranslate"><
 </tbody>
 </table>
 </div>
-<div class="table-wrapper colwidths-given docutils container" id="id6">
-<table class="docutils align-default" id="id6">
-<caption><span class="caption-text">fixes</span><a class="headerlink" href="#id6" title="Link to this table"></a></caption>
+<div class="table-wrapper colwidths-given docutils container" id="id7">
+<table class="docutils align-default" id="id7">
+<caption><span class="caption-text">fixes</span><a class="headerlink" href="#id7" title="Link to this table"></a></caption>
 <colgroup>
 <col style="width: 20.0%" />
 <col style="width: 15.0%" />
@@ -443,9 +511,9 @@ a SHA1 correction map for malformed <code class="docutils literal notranslate"><
 </tbody>
 </table>
 </div>
-<div class="table-wrapper colwidths-given docutils container" id="id7">
-<table class="docutils align-default" id="id7">
-<caption><span class="caption-text">version</span><a class="headerlink" href="#id7" title="Link to this table"></a></caption>
+<div class="table-wrapper colwidths-given docutils container" id="id8">
+<table class="docutils align-default" id="id8">
+<caption><span class="caption-text">version</span><a class="headerlink" href="#id8" title="Link to this table"></a></caption>
 <colgroup>
 <col style="width: 25.0%" />
 <col style="width: 15.0%" />
@@ -480,9 +548,9 @@ commits, and a filtered subset of <code class="docutils literal notranslate"><sp
 <li><p><a class="icon link reference external" href="https://github.com/sashalevin/verhaal/releases/download/db-latest/verhaal.db.xz" target="_blank">https://github.com/sashalevin/verhaal/releases/download/db-latest/verhaal.db.xz</a></p></li>
 </ul>
 <p>Database tables:</p>
-<div class="table-wrapper colwidths-given docutils container" id="id8">
-<table class="docutils align-default" id="id8">
-<caption><span class="caption-text">files</span><a class="headerlink" href="#id8" title="Link to this table"></a></caption>
+<div class="table-wrapper colwidths-given docutils container" id="id9">
+<table class="docutils align-default" id="id9">
+<caption><span class="caption-text">files</span><a class="headerlink" href="#id9" title="Link to this table"></a></caption>
 <colgroup>
 <col style="width: 20.0%" />
 <col style="width: 15.0%" />
@@ -506,9 +574,9 @@ commits, and a filtered subset of <code class="docutils literal notranslate"><sp
 </tbody>
 </table>
 </div>
-<div class="table-wrapper colwidths-given docutils container" id="id9">
-<table class="docutils align-default" id="id9">
-<caption><span class="caption-text">cves</span><a class="headerlink" href="#id9" title="Link to this table"></a></caption>
+<div class="table-wrapper colwidths-given docutils container" id="id10">
+<table class="docutils align-default" id="id10">
+<caption><span class="caption-text">cves</span><a class="headerlink" href="#id10" title="Link to this table"></a></caption>
 <colgroup>
 <col style="width: 20.0%" />
 <col style="width: 15.0%" />
@@ -536,9 +604,9 @@ commits, and a filtered subset of <code class="docutils literal notranslate"><sp
 </tbody>
 </table>
 </div>
-<div class="table-wrapper colwidths-given docutils container" id="id10">
-<table class="docutils align-default" id="id10">
-<caption><span class="caption-text">commits</span><a class="headerlink" href="#id10" title="Link to this table"></a></caption>
+<div class="table-wrapper colwidths-given docutils container" id="id11">
+<table class="docutils align-default" id="id11">
+<caption><span class="caption-text">commits</span><a class="headerlink" href="#id11" title="Link to this table"></a></caption>
 <colgroup>
 <col style="width: 20.0%" />
 <col style="width: 15.0%" />

@@ -18,6 +18,10 @@ Linux Security Vulns effort documentation.
 Known vulnerabilities
 ---------------------
 
+.. tip::
+
+   See :ref:`quick-start` to query in your own Image in **3** steps.
+
 Results from our latest security runs are available in this section.
 It is important to differentiate evaluation-only images and production-ready images.
 The evaluation-only images are not stable patched frequently, instead, they are
