@@ -26,32 +26,6 @@ function versionCmp (a, b) {
   return 0
 }
 
-function scoreColor (score, count, maxCount, alpha = 0.65) {
-  if (score === null) return `rgba(132,139,149,${alpha})`
-  const t = (score / 10) * (count / maxCount)
-  const r = Math.round(254 + t * (100 - 254))
-  const g = Math.round(238 + t * (  6 - 238))
-  const b = Math.round(239 + t * ( 14 - 239))
-  return `rgba(${r},${g},${b},${alpha})`
-}
-
-function cvssScore (vector) {
-  if (!vector) return null
-  try {
-    const p = Object.fromEntries(vector.split('/').slice(1).map(s => s.split(':')))
-    const AV = {N:0.85,A:0.62,L:0.55,P:0.2}[p.AV]
-    const AC = {L:0.77,H:0.44}[p.AC]
-    const PR = (p.S==='C' ? {N:0.85,L:0.68,H:0.50} : {N:0.85,L:0.62,H:0.27})[p.PR]
-    const UI = {N:0.85,R:0.62}[p.UI]
-    const C = {H:0.56,L:0.22,N:0}[p.C], I = {H:0.56,L:0.22,N:0}[p.I], A = {H:0.56,L:0.22,N:0}[p.A]
-    const ISS = 1-(1-C)*(1-I)*(1-A)
-    const imp = p.S==='U' ? 6.42*ISS : 7.52*(ISS-0.029)-3.25*Math.pow(ISS-0.02,15)
-    if (imp <= 0) return 0
-    const base = p.S==='U' ? Math.min(imp+8.22*AV*AC*PR*UI,10) : Math.min(1.08*(imp+8.22*AV*AC*PR*UI),10)
-    return Math.ceil(base*10)/10
-  } catch { return null }
-}
-
 class Stats {
   constructor (app) {
     this.$ = {}
@@ -61,99 +35,63 @@ class Stats {
 
     this.parent = app
   }
-  render_charts_ (results, scoreMap) {
-    const refs = results
-      .filter(r => r.status === 'fulfilled')
-      .map(r => r.value.data)
+  render_abs_cves_chart_ (graph) {
+    const stats = DOM.get('#security-stats', this.$.body)
+    if (!stats || !Array.isArray(graph.tags) || !Array.isArray(graph.values)) return
 
-    const refLabels = refs.map(r => r.ref)
-    const defconfigs = [...new Set(refs.flatMap(r => Object.keys(r.result)))]
-
-
-    const maxCount = Math.max(...refs.flatMap(ref => Object.values(ref.result).map(e => e.cves.length)))
-    const scorePoints = [], scoreColors = [], scoreBorders = []
-    refs.forEach((ref, ri) => {
-      defconfigs.forEach((defconfig, di) => {
-        const entry = ref.result[defconfig]
-        if (!entry) return
-        const count = entry.cves.length
-        const scored = entry.cves.map(cve => scoreMap.get(cve)).filter(s => s != null)
-        const avg = scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : null
-        scorePoints.push({ x: ri, y: di, r: Math.max(2, Math.sqrt(count) * 1.5), avgScore: avg })
-        scoreColors.push(scoreColor(avg, count, maxCount))
-        scoreBorders.push(scoreColor(avg, count, maxCount, 1))
-      })
+    const series = {}
+    graph.tags.forEach((tag, index) => {
+      const match = tag.match(/^(\d+\.\d+)\.(\d+)$/)
+      const value = graph.values[index]
+      if (!match || !Number.isFinite(value)) return
+      ;(series[match[1]] ??= []).push({ y: value, label: tag })
     })
 
-    const stats = DOM.get('#security-stats', this.$.body)
+    const datasets = Object.entries(series)
+      .sort((a, b) => versionCmp(a[0], b[0]))
+      .map(([base, points], index) => {
+        const data = points.sort((a, b) => versionCmp(a.label, b.label))
+          .map(point => ({ ...point, x: Number(point.label.split('.').at(-1)) }))
+        const color = SERIES_COLORS[index % SERIES_COLORS.length]
+        return {
+          label: base,
+          data,
+          borderColor: color,
+          backgroundColor: color,
+          showLine: true,
+          tension: 0.2,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+        }
+      })
 
-    const wrap1 = DOM.new('div', { style: 'position: relative; height: 1200px' })
-    const ctx1 = DOM.new('canvas', { id: 'chart-count' })
-    wrap1.append(ctx1)
-    new Chart(ctx1, {
-      type: 'bubble',
-      data: { datasets: [{ data: scorePoints, backgroundColor: scoreColors, borderColor: scoreBorders }] },
+    if (datasets.length === 0) return
+    const wrap = DOM.new('div', { style: 'position: relative; height: 500px; margin-bottom: 2em;' })
+    const ctx = DOM.new('canvas', { id: 'chart-absolute-cves' })
+    wrap.append(ctx)
+    new Chart(ctx, {
+      type: 'scatter',
+      data: { datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
-          title: { display: true, text: 'CVE count and score per defconfig and git ref' },
-          tooltip: { callbacks: { label: (item) => {
-            const count = Math.round((item.raw.r / 2.5) ** 2)
-            const score = item.raw.avgScore !== null ? ` — avg CVSS ${item.raw.avgScore.toFixed(2)}` : ''
-            return `${count} CVEs${score}`
-          }}}
+          title: { display: true, text: "CVEs findings for image 'ezlite_defconfig' across releases" },
+          tooltip: { callbacks: { label: (item) => `${item.raw.label}: ${item.raw.y} CVEs` } },
         },
         scales: {
-          x: {
-            ticks: { callback: (v) => (refLabels[v] ?? '').replace('refs/heads/', '') },
-            min: -1, max: refs.length
-          },
-          y: {
-            ticks: { stepSize: 1, maxRotation: 45, minRotation: 45, callback: (v) => defconfigs[v] ?? '' },
-            min: -1, max: defconfigs.length
-          }
-        }
-      }
-    })
-
-    // Severity distribution
-    const allCves = new Set(refs.flatMap(ref => Object.values(ref.result).flatMap(e => e.cves)))
-    const buckets = { High: 0, Medium: 0, Low: 0, Unrated: 0 }
-    allCves.forEach(cve => {
-      const s = scoreMap.get(cve)
-      if      (s == null) buckets.Unrated++
-      else if (s >= 7.0)  buckets.High++
-      else if (s >= 4.0)  buckets.Medium++
-      else                buckets.Low++
-    })
-
-    const wrap2 = DOM.new('div', { style: 'position: relative; max-width: 600px; max-height: 600px; margin: 0 auto;' })
-    const ctx2 = DOM.new('canvas', { id: 'chart-pie' })
-    wrap2.append(ctx2)
-    new Chart(ctx2, {
-      type: 'pie',
-      data: {
-        labels: Object.keys(buckets),
-        datasets: [{
-          data: Object.values(buckets),
-          backgroundColor: ['rgba(100,6,14,0.8)', 'rgba(220,190,0,0.8)', 'rgba(50,180,50,0.8)', 'rgba(132,139,149,0.8)']
-        }]
+          x: { title: { display: true, text: 'Stable patch release' }, beginAtZero: true },
+          y: { title: { display: true, text: 'Affected CVEs' }, beginAtZero: true },
+        },
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          title: { display: true, text: 'CVE severity distribution' },
-          legend: { position: 'right' },
-          tooltip: { callbacks: { label: (item) => ` ${item.label}: ${item.raw} (${(item.raw / allCves.size * 100).toFixed(1)}%)` } }
-        }
-      }
     })
-
-    stats.prepend(wrap2)
-    stats.prepend(wrap1)
+    stats.prepend(wrap)
+  }
+  render_abs_cves_chart (graph) {
+    if (typeof Chart === 'undefined')
+      import('https://cdn.jsdelivr.net/npm/chart.js').then(() => this.render_abs_cves_chart_(graph))
+    else
+      this.render_abs_cves_chart_(graph)
   }
   render_tags_chart_ (tags) {
     const stats = DOM.get('#security-stats', this.$.body)
@@ -177,23 +115,21 @@ class Stats {
       ;(series[base] ??= []).push(tag)
     }
 
-    const maxLen = Math.max(...Object.values(series).map(r => r.length))
     const datasets = []
     const sortedSeries = Object.entries(series).sort((a, b) => versionCmp(a[0], b[0]))
     for (const [index, [base, rels]] of sortedSeries.entries()) {
       rels.sort(versionCmp)
-      const offset = maxLen - rels.length
       const stable = seriesInfo[base] === 'stable'
       const color = SERIES_COLORS[index % SERIES_COLORS.length]
       datasets.push({
         label: stable ? `${base} (stable)` : base,
-        data: rels.map((r, i) => ({ x: i + offset, y: tags[r], label: r })),
+        data: rels.map(r => ({ x: Number(r.split('.').at(-1)), y: tags[r], label: r })),
         backgroundColor: color,
         borderColor: color.replace(/[\d.]+\)$/, '1)'),
         showLine: true,
-        tension: 0.3,
-        pointRadius: 5,
-        pointHoverRadius: 7,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHoverRadius: 5,
       })
     }
 
@@ -207,14 +143,11 @@ class Stats {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          title: { display: true, text: 'Unfixed CVEs per supported kernel release' },
+          title: { display: true, text: 'Absolute CVEs findings across releases' },
           tooltip: { callbacks: { label: (item) => `${item.raw.label}: ${item.raw.y} CVEs` } },
         },
         scales: {
-          x: {
-            title: { display: true, text: 'Stable release (oldest → newest)' },
-            ticks: { display: false },
-          },
+          x: { title: { display: true, text: 'Stable patch release' }, beginAtZero: true },
           y: {
             title: { display: true, text: 'Unfixed CVEs' },
             beginAtZero: true,
@@ -231,15 +164,7 @@ class Stats {
     else
       this.render_tags_chart_(tags)
   }
-  render_charts (results, scoreMap) {
-    if (typeof Chart === "undefined")
-      import('https://cdn.jsdelivr.net/npm/chart.js').then(() => {
-        this.render_charts_(results, scoreMap)
-      })
-    else
-      this.render_charts_(results, scoreMap)
-  }
-  render_vulns (results, scoreMap) {
+  render_vulns (results) {
     let stats = DOM.get('#security-stats', this.$.body)
     if (!stats)
       return
@@ -343,7 +268,6 @@ class Stats {
       stats.append(ref_entry)
     }
 
-    this.render_charts(results, scoreMap)
   }
   collect_vuls (obj, base_url) {
     if (!DOM.get('#security-stats', this.$.body))
@@ -358,20 +282,8 @@ class Stats {
         .then(data => ({ file, data }))
     )
 
-    const scores_p = fetch(new Request(new URL('scores.json', base_url)))
-      .then(r => r.ok ? r.json() : null)
-      .catch(() => null)
-
-    Promise.all([Promise.allSettled(requests), scores_p])
-      .then(([results, scores]) => {
-        const scoreMap = new Map()
-        if (scores)
-          scores.cve.forEach((cve, i) => {
-            const s = cvssScore(scores.cvss_score[i])
-            if (s !== null) scoreMap.set(cve, s)
-          })
-        this.render_vulns(results, scoreMap)
-      })
+    Promise.allSettled(requests)
+      .then(results => this.render_vulns(results))
       .catch(err => console.error(err))
   }
   construct_vulns () {
@@ -395,6 +307,14 @@ class Stats {
         return response.json()
       })
       .then(tags => this.render_tags_chart(tags))
+      .catch(() => {})
+
+    fetch('https://raw.githubusercontent.com/analogdevicesinc/linux-security-vulns/refs/heads/data/ezlite_defconfig-per-tag.json')
+      .then(response => {
+        if (!response.ok) throw new Error()
+        return response.json()
+      })
+      .then(graph => this.render_abs_cves_chart(graph))
       .catch(() => {})
   }
   construct () {
