@@ -60,6 +60,60 @@ and score of the CVEs, the check step also has an enrichment job that combines:
   | Daily `OSV <https://osv.dev>`__ schema entries for the 'Linux' ecosystem.
 - | `NIST National Vulnerability Database  <https://nvd.nist.gov/>`__ API calls.
 
+.. _quick-start:
+
+Quick start
+-----------
+
+Obtain the tool ``grondig`` and the daily database ``post.db``:
+
+.. shell::
+
+   $ base_url=https://github.com/analogdevicesinc/linux-security-vulns/releases/download/latest
+   # Fetch tool
+   $ curl -L "$base_url/grondig-amd64" -o grondig ; chmod +x $_
+   # Fetch daily database
+   $ curl -L "$base_url/post.db.xz" | xz -d > post.db
+
+Check compiled files in a version
+Demo: CRYPTO_DEV_IXP4XX -> ixp4xx_crypto.c
+
+.. code:: bash
+
+    echo '{
+      "my-demo": {
+        "stable-tag": "v6.12.110",
+         "compiled-files": [
+           "drivers/crypto/intel/ixp4xx/ixp4xx_crypto.c"
+         ]
+      }
+    }'| ./grondig
+
+.. code:: comment
+
+    {
+      "my-demo": {
+        "cves": [
+          "CVE-2026-97506"
+        ]
+      }
+    }
+
+To obtain the list of the compiled files, you can, at your kernel build tree:
+
+- Extract from the SBOM created with  ``make sbom``; or
+- Run ``./scripts/clang-tools/gen_compile_commands.py`` to generate ``compile_commands.json``,
+  then:
+
+.. shell::
+
+   $ cat compile_commands.json | jq -r '.[].file'
+     ...
+     /path/to/linux/lib/bcd.c
+     /path/to/linux/lib/bitmap-str.c
+     /path/to/linux/lib/bitmap.c
+     ...
+
 Benefits
 --------
 
