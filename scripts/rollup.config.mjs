@@ -13,6 +13,9 @@ export default [
       format: "umd",
       name: "StatsPage",
       sourcemap: true,
+      globals: {
+        d3: 'd3',
+      },
     },
     plugins: [
       alias({
@@ -22,6 +25,7 @@ export default [
       }),
       terser()
     ],
+    external: ['d3'],
   }
 ]
 

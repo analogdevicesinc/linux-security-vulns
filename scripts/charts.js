@@ -1,0 +1,501 @@
+"use strict";
+
+import * as d3 from 'd3'
+
+export const SERIES_COLORS = [
+  '#e45756', '#f58518', '#c9a70a', '#54a24b',
+  '#4c78a8', '#9467bd', '#d6619f', '#17a2b8',
+]
+
+export const SEVERITIES = [
+  { key: 'high',    label: 'High',    range: 'CVSS ≥ 7.0',  color: '#c81a28' },
+  { key: 'medium',  label: 'Medium',  range: 'CVSS 4.0–6.9', color: '#e39b0b' },
+  { key: 'low',     label: 'Low',     range: 'CVSS < 4.0',  color: '#3f9a4a' },
+  { key: 'unrated', label: 'Unrated', range: 'no CVSS',     color: '#8a929b' },
+]
+
+const fmt = d3.format(',')
+const DURATION = 450
+let uid = 0
+
+/* ---------------------------------------------------------------- helpers */
+
+function createCard (host, { title, subtitle }) {
+  const root = d3.select(host).append('figure').attr('class', 'stats-chart')
+  const caption = root.append('figcaption')
+  caption.append('div').attr('class', 'stats-chart-title').text(title)
+  caption.append('div').attr('class', 'stats-chart-subtitle').text(subtitle ?? '')
+  const toolbar = root.append('div').attr('class', 'stats-chart-toolbar')
+  const plot = root.append('div').attr('class', 'stats-chart-plot')
+  const tooltip = plot.append('div').attr('class', 'stats-chart-tooltip').attr('aria-hidden', 'true')
+  return { root, toolbar, plot, tooltip }
+}
+
+function toggleButton (parent, { label, pressed = true, title, swatch, onClick }) {
+  const button = parent.append('button')
+    .attr('type', 'button')
+    .attr('class', 'stats-chart-toggle')
+    .attr('aria-pressed', String(pressed))
+    .attr('title', title ?? null)
+  if (swatch) swatch(button.append('span').attr('class', 'stats-chart-swatch'))
+  button.append('span').text(label)
+  button.on('click', event => onClick(event))
+  return button
+}
+
+/** Redraw on container width changes; returns a disconnect function. */
+function observeWidth (node, draw) {
+  let width = 0, frame = 0
+  const observer = new ResizeObserver(entries => {
+    const next = Math.floor(entries[0].contentRect.width)
+    if (!next || next === width) return
+    width = next
+    cancelAnimationFrame(frame)
+    frame = requestAnimationFrame(() => draw(width))
+  })
+  observer.observe(node)
+  return () => { observer.disconnect(); cancelAnimationFrame(frame) }
+}
+
+function moveTooltip (tooltip, plotNode, event) {
+  const [px, py] = d3.pointer(event, plotNode)
+  const node = tooltip.node()
+  const width = node.offsetWidth, height = node.offsetHeight
+  let left = px + 18
+  if (left + width > plotNode.clientWidth) left = px - width - 18
+  const top = Math.max(0, Math.min(py - height / 2, plotNode.clientHeight - height))
+  tooltip.style('left', `${Math.max(0, left)}px`).style('top', `${top}px`)
+}
+
+function truncate (textNode, maxWidth) {
+  const full = textNode.textContent
+  if (textNode.getComputedTextLength() <= maxWidth) return
+  let lo = 0, hi = full.length
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2)
+    textNode.textContent = full.slice(0, mid) + '…'
+    if (textNode.getComputedTextLength() <= maxWidth) lo = mid
+    else hi = mid - 1
+  }
+  textNode.textContent = full.slice(0, lo) + '…'
+  d3.select(textNode).append('title').text(full)
+}
+
+/** 1, 2, 5 × 10^k ticks within a log domain. */
+function logTicks ([lo, hi]) {
+  const ticks = []
+  for (let p = Math.floor(Math.log10(lo)); p <= Math.ceil(Math.log10(hi)); p++)
+    for (const m of [1, 2, 5]) {
+      const v = m * 10 ** p
+      if (v >= lo && v <= hi) ticks.push(v)
+    }
+  return ticks
+}
+
+/* ------------------------------------------------- CVEs across releases */
+
+/**
+ * Line chart of unfixed CVEs per stable patch release, one line per series
+ * and kind (e.g. absolute and per defconfig).
+ *
+ * lines: [{ base, label, kind, color, values: [{ x, y, release }] }]
+ * kinds: [{ key, label, dash }]
+ */
+export function releaseChart (host, { lines, kinds }) {
+  const card = createCard(host, {
+    title: 'Unfixed CVEs across stable releases',
+    subtitle: 'Drag over the plot to zoom, double-click to reset. ' +
+              'Click a series to toggle it, double-click to isolate it.',
+  })
+  const kindOf = Object.fromEntries(kinds.map(k => [k.key, k]))
+  const bases = [...new Map(lines.map(l => [l.base, l])).values()]
+  const xMax = d3.max(lines, l => d3.max(l.values, v => v.x)) ?? 1
+  lines.forEach(l => { l.byX = new Map(l.values.map(v => [v.x, v])) })
+
+  const state = {
+    kinds: new Set(kinds.map(k => k.key)),
+    hidden: new Set(),
+    domain: null,
+    focus: null,
+    log: false,
+  }
+  const visible = l => state.kinds.has(l.kind) && !state.hidden.has(l.base)
+
+  /* toolbar */
+  const kindGroup = card.toolbar.append('div').attr('class', 'stats-chart-group')
+  const kindButtons = kinds.map(kind => toggleButton(kindGroup, {
+    label: kind.label,
+    title: `Show or hide all ${kind.label} lines`,
+    swatch: s => s.append('svg').attr('class', 'no-background').attr('width', 22).attr('height', 10)
+      .append('line').attr('x1', 1).attr('x2', 21).attr('y1', 5).attr('y2', 5)
+      .attr('stroke', 'currentColor').attr('stroke-width', 2).attr('stroke-dasharray', kind.dash),
+    onClick: () => {
+      state.kinds.has(kind.key) ? state.kinds.delete(kind.key) : state.kinds.add(kind.key)
+      update()
+    },
+  }))
+  const baseGroup = card.toolbar.append('div').attr('class', 'stats-chart-group')
+  const baseButtons = bases.map(base => toggleButton(baseGroup, {
+    label: base.label,
+    swatch: s => s.classed('stats-chart-dot', true).style('background', base.color),
+    onClick: () => {
+      state.hidden.has(base.base) ? state.hidden.delete(base.base) : state.hidden.add(base.base)
+      update()
+    },
+  }).on('dblclick', () => {
+    state.hidden = new Set(bases.map(b => b.base).filter(b => b !== base.base))
+    update()
+  }).on('pointerenter', () => focus(base.base))
+    .on('pointerleave', () => focus(null)))
+  const scaleGroup = card.toolbar.append('div').attr('class', 'stats-chart-group')
+  const logButton = toggleButton(scaleGroup, {
+    label: 'Log scale',
+    pressed: false,
+    title: 'Logarithmic Y axis, to compare absolute and per-image counts together',
+    onClick: () => { state.log = !state.log; update() },
+  })
+  const reset = card.toolbar.append('button')
+    .attr('type', 'button').attr('class', 'stats-chart-action')
+    .text('Reset zoom').style('display', 'none')
+    .on('click', () => setDomain(null))
+
+  /* plot */
+  let chart = null
+  function draw (width) {
+    card.plot.selectAll('svg').remove()
+    const height = Math.round(Math.max(300, Math.min(460, width * 0.55)))
+    const m = { top: 12, right: 16, bottom: 46, left: 56 }
+    const iw = width - m.left - m.right, ih = height - m.top - m.bottom
+    const clipId = `stats-clip-${++uid}`
+
+    const svg = card.plot.insert('svg', '.stats-chart-tooltip')
+      .attr('class', 'no-background')
+      .attr('width', width).attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('role', 'img')
+      .attr('aria-label', 'Line chart of unfixed CVEs per stable patch release')
+    svg.append('defs').append('clipPath').attr('id', clipId)
+      .append('rect').attr('y', -4).attr('width', iw).attr('height', ih + 8)
+    const g = svg.append('g').attr('transform', `translate(${m.left},${m.top})`)
+
+    const x = d3.scaleLinear().range([0, iw])
+    const y = d3.scaleLinear().range([ih, 0])
+    const grid = g.append('g').attr('class', 'stats-chart-grid')
+    const xAxis = g.append('g').attr('class', 'stats-chart-axis').attr('transform', `translate(0,${ih})`)
+    const yAxis = g.append('g').attr('class', 'stats-chart-axis')
+    g.append('text').attr('class', 'stats-chart-axis-label')
+      .attr('x', iw / 2).attr('y', ih + 38).attr('text-anchor', 'middle')
+      .text('Stable patch release (N in x.y.N)')
+    g.append('text').attr('class', 'stats-chart-axis-label')
+      .attr('transform', 'rotate(-90)').attr('x', -ih / 2).attr('y', -42)
+      .attr('text-anchor', 'middle').text('Unfixed CVEs')
+
+    const area = g.append('g').attr('clip-path', `url(#${clipId})`)
+    const line = d3.line().x(d => chart.x(d.x)).y(d => chart.y(Math.max(1, d.y))).curve(d3.curveMonotoneX)
+    const paths = area.selectAll('path').data(lines).join('path')
+      .attr('class', 'stats-chart-line')
+      .attr('stroke', d => d.color)
+      .attr('stroke-dasharray', d => kindOf[d.kind]?.dash ?? null)
+    const rule = area.append('line').attr('class', 'stats-chart-rule')
+      .attr('y1', 0).attr('y2', ih).style('display', 'none')
+    const dots = area.append('g')
+    const empty = g.append('text').attr('class', 'stats-chart-empty')
+      .attr('x', iw / 2).attr('y', ih / 2).attr('text-anchor', 'middle')
+      .text('No series selected')
+
+    const brush = d3.brushX().extent([[0, 0], [iw, ih]]).on('end', event => {
+      if (!event.sourceEvent || !event.selection) return
+      const [a, b] = event.selection.map(px => Math.round(x.invert(px)))
+      brushG.call(brush.move, null)
+      if (b - a >= 2) setDomain([a, b])
+    })
+    const brushG = g.append('g').attr('class', 'stats-chart-brush').call(brush)
+      .on('dblclick', () => setDomain(null))
+      .on('pointermove.hover', hover)
+      .on('pointerleave.hover', hideHover)
+
+    chart = { svg, x, y, iw, ih, grid, xAxis, yAxis, paths, line, rule, dots, empty, brushG }
+    update(false)
+  }
+
+  function update (animate = true) {
+    logButton.attr('aria-pressed', String(state.log))
+    kindButtons.forEach((b, i) => b.attr('aria-pressed', String(state.kinds.has(kinds[i].key))))
+    baseButtons.forEach((b, i) => b.attr('aria-pressed', String(!state.hidden.has(bases[i].base))))
+    reset.style('display', state.domain ? null : 'none')
+    if (!chart) return
+
+    const [x0, x1] = state.domain ?? [0, xMax]
+    const shown = lines.filter(visible)
+    const yMax = d3.max(shown, l => d3.max(l.values, v => v.x >= x0 && v.x <= x1 ? v.y : undefined))
+    chart.x.domain([x0, x1])
+    const yTicks = Math.max(3, Math.round(chart.ih / 55))
+    chart.y = state.log
+      ? d3.scaleLog().domain([1, Math.max(10, yMax ?? 10)]).nice().range([chart.ih, 0])
+      : d3.scaleLinear().domain([0, Math.max(1, yMax ?? 1)]).nice().range([chart.ih, 0])
+    const yAxisOf = scale => {
+      const axis = d3.axisLeft(scale).tickSizeOuter(0)
+      return state.log ? axis.tickValues(logTicks(scale.domain())) : axis.ticks(yTicks)
+    }
+
+    const t = chart.svg.transition().duration(animate ? DURATION : 0).ease(d3.easeCubicOut)
+    chart.xAxis.transition(t).call(d3.axisBottom(chart.x)
+      .ticks(Math.max(2, Math.round(chart.iw / 70))).tickFormat(d3.format('d')).tickSizeOuter(0))
+    chart.yAxis.transition(t).call(yAxisOf(chart.y).tickFormat(d3.format('~s')))
+    chart.grid.transition(t).call(yAxisOf(chart.y).tickSize(-chart.iw).tickFormat(''))
+    chart.paths.transition(t)
+      .attr('d', d => chart.line(d.values))
+      .style('opacity', d => lineOpacity(d))
+    chart.empty.style('display', shown.length ? 'none' : null)
+    hideHover()
+  }
+
+  function lineOpacity (d) {
+    if (!visible(d)) return 0
+    return state.focus && state.focus !== d.base ? 0.12 : 1
+  }
+
+  function focus (base) {
+    state.focus = base
+    chart?.paths.transition().duration(150).style('opacity', d => lineOpacity(d))
+  }
+
+  function setDomain (domain) {
+    state.domain = domain
+    update()
+  }
+
+  let hoverX = null
+  function hover (event) {
+    const [mx] = d3.pointer(event, chart.brushG.node())
+    const xv = Math.round(chart.x.invert(mx))
+    const points = lines.filter(visible)
+      .map(l => ({ line: l, point: l.byX.get(xv) }))
+      .filter(p => p.point)
+    if (!points.length) return hideHover()
+
+    const px = chart.x(xv)
+    chart.rule.style('display', null).attr('x1', px).attr('x2', px)
+    chart.dots.selectAll('circle').data(points).join('circle')
+      .attr('class', 'stats-chart-dot-marker').attr('r', 4)
+      .attr('cx', px).attr('cy', d => chart.y(Math.max(1, d.point.y)))
+      .attr('fill', d => d.line.color)
+
+    if (hoverX !== xv) {
+      hoverX = xv
+      renderHoverTooltip(xv, points)
+    }
+    card.tooltip.classed('visible', true)
+    moveTooltip(card.tooltip, card.plot.node(), event)
+  }
+
+  function renderHoverTooltip (xv, points) {
+    const tip = card.tooltip
+    tip.selectAll('*').remove()
+    tip.append('div').attr('class', 'stats-chart-tooltip-title').text(`Patch release .${xv}`)
+    const shownKinds = kinds.filter(k => state.kinds.has(k.key))
+    const table = tip.append('table')
+    const head = table.append('thead').append('tr')
+    head.append('th').text('Release')
+    shownKinds.forEach(k => head.append('th').text(k.label))
+    const byBase = d3.group(points, p => p.line.base)
+    for (const base of bases.filter(b => byBase.has(b.base)).reverse()) {
+      const entries = byBase.get(base.base)
+      const row = table.append('tr')
+      const name = row.append('td')
+      name.append('span').attr('class', 'stats-chart-dot').style('background', base.color)
+      name.append('span').text(entries[0].point.release)
+      for (const kind of shownKinds) {
+        const entry = entries.find(e => e.line.kind === kind.key)
+        row.append('td').attr('class', 'num').text(entry ? fmt(entry.point.y) : '—')
+      }
+    }
+  }
+
+  function hideHover () {
+    hoverX = null
+    if (!chart) return
+    chart.rule.style('display', 'none')
+    chart.dots.selectAll('circle').remove()
+    card.tooltip.classed('visible', false)
+  }
+
+  update(false)
+  const disconnect = observeWidth(card.plot.node(), draw)
+  return { destroy: () => { disconnect(); card.root.remove() } }
+}
+
+/* ------------------------------------------- CVEs per image and branch */
+
+/**
+ * Horizontal stacked bars, one per image, grouped by git ref, split by
+ * CVSS severity.
+ *
+ * groups: [{ ref, label, sha, rows: [{ ref, defconfig, total, avg, counts }] }]
+ * totals: severity totals over unique CVEs, { high, medium, low, unrated }
+ */
+export function imageChart (host, { groups, totals, uniqueCves, scored, onSelect }) {
+  const images = d3.sum(groups, g => g.rows.length)
+  // Without CVSS data every CVE is "unrated": plot plain counts instead.
+  const severities = scored ? SEVERITIES
+    : [{ key: 'unrated', label: 'CVEs', range: '', color: 'var(--accent-color)' }]
+  const card = createCard(host, {
+    title: 'CVEs per image and branch',
+    subtitle: `${fmt(uniqueCves)} unique CVEs across ${images} images. ` +
+              (scored ? 'Click a severity to toggle it, click a bar to open its findings.'
+                      : 'CVSS scores unavailable, showing counts only. Click a bar to open its findings.'),
+  })
+  const state = { severities: new Set(severities.map(s => s.key)) }
+
+  const severityGroup = card.toolbar.append('div').attr('class', 'stats-chart-group')
+  if (!scored) card.toolbar.style('display', 'none')
+  const severityButtons = severities.map(sev => toggleButton(severityGroup, {
+    label: `${sev.label} · ${fmt(totals[sev.key] ?? 0)}`,
+    title: `${sev.range}; count of unique CVEs`,
+    swatch: s => s.classed('stats-chart-square', true).style('background', sev.color),
+    onClick: () => {
+      if (state.severities.has(sev.key)) {
+        if (state.severities.size === 1) return
+        state.severities.delete(sev.key)
+      } else {
+        state.severities.add(sev.key)
+      }
+      update()
+    },
+  }))
+
+  let chart = null
+  function draw (width) {
+    card.plot.selectAll('svg').remove()
+    const rowH = 24, groupH = 30, groupGap = 10
+    const m = { top: 26, right: 56, bottom: 8, left: Math.round(Math.min(340, Math.max(150, width * 0.4))) }
+    const iw = width - m.left - m.right
+
+    let cursor = 0
+    const layout = groups.map(group => {
+      const y = cursor
+      cursor += groupH
+      const rows = group.rows.map(row => {
+        const ry = cursor
+        cursor += rowH
+        return { row, y: ry }
+      })
+      cursor += groupGap
+      return { group, y, rows }
+    })
+    const height = m.top + cursor + m.bottom
+
+    const svg = card.plot.insert('svg', '.stats-chart-tooltip')
+      .attr('class', 'no-background')
+      .attr('width', width).attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('role', 'img')
+      .attr('aria-label', 'Stacked bar chart of CVEs per image and branch, by severity')
+    const g = svg.append('g').attr('transform', `translate(${m.left},${m.top})`)
+    const x = d3.scaleLinear().range([0, iw])
+    const grid = g.append('g').attr('class', 'stats-chart-grid')
+    const xAxis = g.append('g').attr('class', 'stats-chart-axis')
+
+    const groupG = g.selectAll('g.stats-chart-bar-group').data(layout).join('g')
+      .attr('class', 'stats-chart-bar-group')
+      .attr('transform', d => `translate(0,${d.y})`)
+    const groupLabel = groupG.append('text').attr('class', 'stats-chart-group-label')
+      .attr('x', -m.left + 2).attr('y', groupH - 10)
+    groupLabel.append('tspan').text(d => d.group.label)
+    groupLabel.append('tspan').attr('class', 'stats-chart-muted').attr('dx', 8)
+      .text(d => d.group.sha ? d.group.sha.substring(0, 12) : '')
+
+    const rowG = groupG.selectAll('g.stats-chart-row').data(d => d.rows).join('g')
+      .attr('class', 'stats-chart-row')
+      .attr('transform', function (d) {
+        const parent = d3.select(this.parentNode).datum()
+        return `translate(0,${d.y - parent.y})`
+      })
+      .attr('tabindex', 0)
+      .attr('role', 'button')
+      .attr('aria-label', d => `${d.row.defconfig}: ${d.row.total} CVEs`)
+      .on('click', (_, d) => onSelect?.(d.row))
+      .on('keydown', (event, d) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect?.(d.row) }
+      })
+      .on('pointerenter', (event, d) => showRow(event, d.row))
+      .on('pointermove', event => moveTooltip(card.tooltip, card.plot.node(), event))
+      .on('pointerleave', () => card.tooltip.classed('visible', false))
+
+    rowG.append('rect').attr('class', 'stats-chart-row-bg')
+      .attr('x', -m.left).attr('width', width).attr('height', rowH)
+    rowG.append('text').attr('class', 'stats-chart-row-label')
+      .attr('x', -10).attr('y', rowH / 2).attr('dy', '0.35em').attr('text-anchor', 'end')
+      .text(d => d.row.defconfig)
+      .each(function () { truncate(this, m.left - 22) })
+    const barH = rowH - 8
+    rowG.selectAll('rect.stats-chart-segment')
+      .data(d => severities.map(sev => ({ sev, row: d.row })))
+      .join('rect')
+      .attr('class', 'stats-chart-segment')
+      .attr('y', (rowH - barH) / 2).attr('height', barH)
+      .style('fill', d => d.sev.color)
+    rowG.append('text').attr('class', 'stats-chart-row-total')
+      .attr('y', rowH / 2).attr('dy', '0.35em')
+
+    chart = { svg, x, iw, height: cursor, grid, xAxis, rowG }
+    update(false)
+  }
+
+  function update (animate = true) {
+    severityButtons.forEach((b, i) => b.attr('aria-pressed', String(state.severities.has(severities[i].key))))
+    if (!chart) return
+    const active = severities.filter(s => state.severities.has(s.key))
+    const visibleTotal = row => d3.sum(active, s => row.counts[s.key])
+    const max = d3.max(groups.flatMap(g => g.rows), visibleTotal) ?? 1
+    chart.x.domain([0, Math.max(1, max)]).nice()
+
+    const t = chart.svg.transition().duration(animate ? DURATION : 0).ease(d3.easeCubicOut)
+    const ticks = Math.max(2, Math.round(chart.iw / 90))
+    chart.xAxis.transition(t).call(d3.axisTop(chart.x).ticks(ticks).tickFormat(d3.format('~s')).tickSizeOuter(0))
+    chart.grid.transition(t).call(d3.axisTop(chart.x).ticks(ticks).tickSize(-chart.height).tickFormat(''))
+
+    chart.rowG.selectAll('rect.stats-chart-segment').transition(t)
+      .attr('x', d => chart.x(offsetUntil(d, active)))
+      .attr('width', d => state.severities.has(d.sev.key) ? chart.x(d.row.counts[d.sev.key]) : 0)
+    chart.rowG.select('text.stats-chart-row-total').transition(t)
+      .attr('x', d => chart.x(visibleTotal(d.row)) + 6)
+      .text(d => fmt(visibleTotal(d.row)))
+  }
+
+  /** Sum of the visible segments stacked before this one. */
+  function offsetUntil (d, active) {
+    const order = severities.map(s => s.key)
+    const index = order.indexOf(d.sev.key)
+    return d3.sum(active.filter(s => order.indexOf(s.key) < index), s => d.row.counts[s.key])
+  }
+
+  function showRow (event, row) {
+    const tip = card.tooltip
+    tip.selectAll('*').remove()
+    tip.append('div').attr('class', 'stats-chart-tooltip-title').text(row.defconfig)
+    tip.append('div').attr('class', 'stats-chart-muted').text(row.ref.replace('refs/heads/', ''))
+    const table = tip.append('table')
+    for (const sev of scored ? severities : []) {
+      const count = row.counts[sev.key]
+      const tr = table.append('tr').classed('stats-chart-off', !state.severities.has(sev.key))
+      const name = tr.append('td')
+      name.append('span').attr('class', 'stats-chart-square').style('background', sev.color)
+      name.append('span').text(sev.label)
+      tr.append('td').attr('class', 'num').text(fmt(count))
+      tr.append('td').attr('class', 'num stats-chart-muted')
+        .text(row.total ? `${(count / row.total * 100).toFixed(1)}%` : '')
+    }
+    const foot = table.append('tr').attr('class', 'stats-chart-total')
+    foot.append('td').text('Total')
+    foot.append('td').attr('class', 'num').text(fmt(row.total))
+    foot.append('td').attr('class', 'num stats-chart-muted')
+      .text(row.avg != null ? `avg ${row.avg.toFixed(1)}` : '')
+    card.tooltip.classed('visible', true)
+    moveTooltip(card.tooltip, card.plot.node(), event)
+  }
+
+  update(false)
+  const disconnect = observeWidth(card.plot.node(), draw)
+  return { destroy: () => { disconnect(); card.root.remove() } }
+}

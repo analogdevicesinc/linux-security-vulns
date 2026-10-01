@@ -26,7 +26,8 @@ class DirectiveStats(Directive):
 
 def BuilderInited(app):
     if app.builder.format == 'html':
-        app.add_js_file("custom.umd.js", priority=500, loading_method="async")
+        app.add_js_file("https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js", priority=499)
+        app.add_js_file("custom.umd.js", priority=500)
         app.add_css_file("custom.min.css")
 
 def setup(app):
