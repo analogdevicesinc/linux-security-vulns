@@ -5,8 +5,8 @@ import { DOM } from '@shared/scripts/dom.js'
 import { releaseChart, imageChart, SERIES_COLORS } from './charts.js'
 
 const RELEASE_KINDS = [
-  { key: 'absolute',  label: 'Absolute',         dash: null },
-  { key: 'defconfig', label: 'ezlite_defconfig', dash: '5 3' },
+  { key: 'absolute',  label: 'all',         dash: null },
+  { key: 'defconfig', label: 'sc598-som-ezlite_defconfig', dash: '5 3' },
 ]
 
 function versionKey (r) {
