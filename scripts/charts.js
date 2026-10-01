@@ -7,13 +7,6 @@ export const SERIES_COLORS = [
   '#4c78a8', '#9467bd', '#d6619f', '#17a2b8',
 ]
 
-export const SEVERITIES = [
-  { key: 'high',    label: 'High',    range: 'CVSS ≥ 7.0',  color: '#c81a28' },
-  { key: 'medium',  label: 'Medium',  range: 'CVSS 4.0–6.9', color: '#e39b0b' },
-  { key: 'low',     label: 'Low',     range: 'CVSS < 4.0',  color: '#3f9a4a' },
-  { key: 'unrated', label: 'Unrated', range: 'no CVSS',     color: '#8a929b' },
-]
-
 const fmt = d3.format(',')
 const DURATION = 450
 let uid = 0
@@ -81,17 +74,6 @@ function truncate (textNode, maxWidth) {
   d3.select(textNode).append('title').text(full)
 }
 
-/** 1, 2, 5 × 10^k ticks within a log domain. */
-function logTicks ([lo, hi]) {
-  const ticks = []
-  for (let p = Math.floor(Math.log10(lo)); p <= Math.ceil(Math.log10(hi)); p++)
-    for (const m of [1, 2, 5]) {
-      const v = m * 10 ** p
-      if (v >= lo && v <= hi) ticks.push(v)
-    }
-  return ticks
-}
-
 /* ------------------------------------------------- CVEs across releases */
 
 /**
@@ -104,8 +86,7 @@ function logTicks ([lo, hi]) {
 export function releaseChart (host, { lines, kinds }) {
   const card = createCard(host, {
     title: 'Unfixed CVEs across stable releases',
-    subtitle: 'Drag over the plot to zoom, double-click to reset. ' +
-              'Click a series to toggle it, double-click to isolate it.',
+    subtitle: 'Per patch release for the Linux kernel tree and filtered by affected files in a defconfig.',
   })
   const kindOf = Object.fromEntries(kinds.map(k => [k.key, k]))
   const bases = [...new Map(lines.map(l => [l.base, l])).values()]
@@ -117,7 +98,6 @@ export function releaseChart (host, { lines, kinds }) {
     hidden: new Set(),
     domain: null,
     focus: null,
-    log: false,
   }
   const visible = l => state.kinds.has(l.kind) && !state.hidden.has(l.base)
 
@@ -147,13 +127,6 @@ export function releaseChart (host, { lines, kinds }) {
     update()
   }).on('pointerenter', () => focus(base.base))
     .on('pointerleave', () => focus(null)))
-  const scaleGroup = card.toolbar.append('div').attr('class', 'stats-chart-group')
-  const logButton = toggleButton(scaleGroup, {
-    label: 'Log scale',
-    pressed: false,
-    title: 'Logarithmic Y axis, to compare absolute and per-image counts together',
-    onClick: () => { state.log = !state.log; update() },
-  })
   const reset = card.toolbar.append('button')
     .attr('type', 'button').attr('class', 'stats-chart-action')
     .text('Reset zoom').style('display', 'none')
@@ -191,7 +164,7 @@ export function releaseChart (host, { lines, kinds }) {
       .attr('text-anchor', 'middle').text('Unfixed CVEs')
 
     const area = g.append('g').attr('clip-path', `url(#${clipId})`)
-    const line = d3.line().x(d => chart.x(d.x)).y(d => chart.y(Math.max(1, d.y))).curve(d3.curveMonotoneX)
+    const line = d3.line().x(d => chart.x(d.x)).y(d => chart.y(d.y)).curve(d3.curveMonotoneX)
     const paths = area.selectAll('path').data(lines).join('path')
       .attr('class', 'stats-chart-line')
       .attr('stroke', d => d.color)
@@ -219,7 +192,6 @@ export function releaseChart (host, { lines, kinds }) {
   }
 
   function update (animate = true) {
-    logButton.attr('aria-pressed', String(state.log))
     kindButtons.forEach((b, i) => b.attr('aria-pressed', String(state.kinds.has(kinds[i].key))))
     baseButtons.forEach((b, i) => b.attr('aria-pressed', String(!state.hidden.has(bases[i].base))))
     reset.style('display', state.domain ? null : 'none')
@@ -230,13 +202,8 @@ export function releaseChart (host, { lines, kinds }) {
     const yMax = d3.max(shown, l => d3.max(l.values, v => v.x >= x0 && v.x <= x1 ? v.y : undefined))
     chart.x.domain([x0, x1])
     const yTicks = Math.max(3, Math.round(chart.ih / 55))
-    chart.y = state.log
-      ? d3.scaleLog().domain([1, Math.max(10, yMax ?? 10)]).nice().range([chart.ih, 0])
-      : d3.scaleLinear().domain([0, Math.max(1, yMax ?? 1)]).nice().range([chart.ih, 0])
-    const yAxisOf = scale => {
-      const axis = d3.axisLeft(scale).tickSizeOuter(0)
-      return state.log ? axis.tickValues(logTicks(scale.domain())) : axis.ticks(yTicks)
-    }
+    chart.y.domain([0, Math.max(1, yMax ?? 1)]).nice()
+    const yAxisOf = scale => d3.axisLeft(scale).ticks(yTicks).tickSizeOuter(0)
 
     const t = chart.svg.transition().duration(animate ? DURATION : 0).ease(d3.easeCubicOut)
     chart.xAxis.transition(t).call(d3.axisBottom(chart.x)
@@ -278,7 +245,7 @@ export function releaseChart (host, { lines, kinds }) {
     chart.rule.style('display', null).attr('x1', px).attr('x2', px)
     chart.dots.selectAll('circle').data(points).join('circle')
       .attr('class', 'stats-chart-dot-marker').attr('r', 4)
-      .attr('cx', px).attr('cy', d => chart.y(Math.max(1, d.point.y)))
+      .attr('cx', px).attr('cy', d => chart.y(d.point.y))
       .attr('fill', d => d.line.color)
 
     if (hoverX !== xv) {
@@ -328,43 +295,18 @@ export function releaseChart (host, { lines, kinds }) {
 /* ------------------------------------------- CVEs per image and branch */
 
 /**
- * Horizontal stacked bars, one per image, grouped by git ref, split by
- * CVSS severity.
+ * Horizontal bars, one per image, grouped by git ref.
  *
- * groups: [{ ref, label, sha, rows: [{ ref, defconfig, total, avg, counts }] }]
- * totals: severity totals over unique CVEs, { high, medium, low, unrated }
+ * groups: [{ ref, label, sha, rows: [{ ref, defconfig, total }] }]
  */
-export function imageChart (host, { groups, totals, uniqueCves, scored, onSelect }) {
+export function imageChart (host, { groups, uniqueCves, onSelect }) {
   const images = d3.sum(groups, g => g.rows.length)
-  // Without CVSS data every CVE is "unrated": plot plain counts instead.
-  const severities = scored ? SEVERITIES
-    : [{ key: 'unrated', label: 'CVEs', range: '', color: 'var(--accent-color)' }]
   const card = createCard(host, {
     title: 'CVEs per image and branch',
-    subtitle: `${fmt(uniqueCves)} unique CVEs across ${images} images. ` +
-              (scored ? 'Click a severity to toggle it, click a bar to open its findings.'
-                      : 'CVSS scores unavailable, showing counts only. Click a bar to open its findings.'),
+    subtitle: `${fmt(uniqueCves)} unique CVEs across ${images} images.`,
   })
-  const state = { severities: new Set(severities.map(s => s.key)) }
+  card.toolbar.remove()
 
-  const severityGroup = card.toolbar.append('div').attr('class', 'stats-chart-group')
-  if (!scored) card.toolbar.style('display', 'none')
-  const severityButtons = severities.map(sev => toggleButton(severityGroup, {
-    label: `${sev.label} · ${fmt(totals[sev.key] ?? 0)}`,
-    title: `${sev.range}; count of unique CVEs`,
-    swatch: s => s.classed('stats-chart-square', true).style('background', sev.color),
-    onClick: () => {
-      if (state.severities.has(sev.key)) {
-        if (state.severities.size === 1) return
-        state.severities.delete(sev.key)
-      } else {
-        state.severities.add(sev.key)
-      }
-      update()
-    },
-  }))
-
-  let chart = null
   function draw (width) {
     card.plot.selectAll('svg').remove()
     const rowH = 24, groupH = 30, groupGap = 10
@@ -378,7 +320,7 @@ export function imageChart (host, { groups, totals, uniqueCves, scored, onSelect
       const rows = group.rows.map(row => {
         const ry = cursor
         cursor += rowH
-        return { row, y: ry }
+        return { row, y: ry - y }
       })
       cursor += groupGap
       return { group, y, rows }
@@ -390,11 +332,16 @@ export function imageChart (host, { groups, totals, uniqueCves, scored, onSelect
       .attr('width', width).attr('height', height)
       .attr('viewBox', `0 0 ${width} ${height}`)
       .attr('role', 'img')
-      .attr('aria-label', 'Stacked bar chart of CVEs per image and branch, by severity')
+      .attr('aria-label', 'Bar chart of CVEs per image and branch')
     const g = svg.append('g').attr('transform', `translate(${m.left},${m.top})`)
-    const x = d3.scaleLinear().range([0, iw])
-    const grid = g.append('g').attr('class', 'stats-chart-grid')
-    const xAxis = g.append('g').attr('class', 'stats-chart-axis')
+    const x = d3.scaleLinear()
+      .domain([0, Math.max(1, d3.max(groups.flatMap(g => g.rows), r => r.total) ?? 1)]).nice()
+      .range([0, iw])
+    const ticks = Math.max(2, Math.round(iw / 90))
+    g.append('g').attr('class', 'stats-chart-grid')
+      .call(d3.axisTop(x).ticks(ticks).tickSize(-cursor).tickFormat(''))
+    g.append('g').attr('class', 'stats-chart-axis')
+      .call(d3.axisTop(x).ticks(ticks).tickFormat(d3.format('~s')).tickSizeOuter(0))
 
     const groupG = g.selectAll('g.stats-chart-bar-group').data(layout).join('g')
       .attr('class', 'stats-chart-bar-group')
@@ -407,10 +354,7 @@ export function imageChart (host, { groups, totals, uniqueCves, scored, onSelect
 
     const rowG = groupG.selectAll('g.stats-chart-row').data(d => d.rows).join('g')
       .attr('class', 'stats-chart-row')
-      .attr('transform', function (d) {
-        const parent = d3.select(this.parentNode).datum()
-        return `translate(0,${d.y - parent.y})`
-      })
+      .attr('transform', d => `translate(0,${d.y})`)
       .attr('tabindex', 0)
       .attr('role', 'button')
       .attr('aria-label', d => `${d.row.defconfig}: ${d.row.total} CVEs`)
@@ -429,45 +373,14 @@ export function imageChart (host, { groups, totals, uniqueCves, scored, onSelect
       .text(d => d.row.defconfig)
       .each(function () { truncate(this, m.left - 22) })
     const barH = rowH - 8
-    rowG.selectAll('rect.stats-chart-segment')
-      .data(d => severities.map(sev => ({ sev, row: d.row })))
-      .join('rect')
-      .attr('class', 'stats-chart-segment')
+    rowG.append('rect').attr('class', 'stats-chart-bar')
       .attr('y', (rowH - barH) / 2).attr('height', barH)
-      .style('fill', d => d.sev.color)
+      .attr('width', 0)
+      .transition().duration(DURATION).ease(d3.easeCubicOut)
+      .attr('width', d => x(d.row.total))
     rowG.append('text').attr('class', 'stats-chart-row-total')
-      .attr('y', rowH / 2).attr('dy', '0.35em')
-
-    chart = { svg, x, iw, height: cursor, grid, xAxis, rowG }
-    update(false)
-  }
-
-  function update (animate = true) {
-    severityButtons.forEach((b, i) => b.attr('aria-pressed', String(state.severities.has(severities[i].key))))
-    if (!chart) return
-    const active = severities.filter(s => state.severities.has(s.key))
-    const visibleTotal = row => d3.sum(active, s => row.counts[s.key])
-    const max = d3.max(groups.flatMap(g => g.rows), visibleTotal) ?? 1
-    chart.x.domain([0, Math.max(1, max)]).nice()
-
-    const t = chart.svg.transition().duration(animate ? DURATION : 0).ease(d3.easeCubicOut)
-    const ticks = Math.max(2, Math.round(chart.iw / 90))
-    chart.xAxis.transition(t).call(d3.axisTop(chart.x).ticks(ticks).tickFormat(d3.format('~s')).tickSizeOuter(0))
-    chart.grid.transition(t).call(d3.axisTop(chart.x).ticks(ticks).tickSize(-chart.height).tickFormat(''))
-
-    chart.rowG.selectAll('rect.stats-chart-segment').transition(t)
-      .attr('x', d => chart.x(offsetUntil(d, active)))
-      .attr('width', d => state.severities.has(d.sev.key) ? chart.x(d.row.counts[d.sev.key]) : 0)
-    chart.rowG.select('text.stats-chart-row-total').transition(t)
-      .attr('x', d => chart.x(visibleTotal(d.row)) + 6)
-      .text(d => fmt(visibleTotal(d.row)))
-  }
-
-  /** Sum of the visible segments stacked before this one. */
-  function offsetUntil (d, active) {
-    const order = severities.map(s => s.key)
-    const index = order.indexOf(d.sev.key)
-    return d3.sum(active.filter(s => order.indexOf(s.key) < index), s => d.row.counts[s.key])
+      .attr('x', d => x(d.row.total) + 6).attr('y', rowH / 2).attr('dy', '0.35em')
+      .text(d => fmt(d.row.total))
   }
 
   function showRow (event, row) {
@@ -475,27 +388,11 @@ export function imageChart (host, { groups, totals, uniqueCves, scored, onSelect
     tip.selectAll('*').remove()
     tip.append('div').attr('class', 'stats-chart-tooltip-title').text(row.defconfig)
     tip.append('div').attr('class', 'stats-chart-muted').text(row.ref.replace('refs/heads/', ''))
-    const table = tip.append('table')
-    for (const sev of scored ? severities : []) {
-      const count = row.counts[sev.key]
-      const tr = table.append('tr').classed('stats-chart-off', !state.severities.has(sev.key))
-      const name = tr.append('td')
-      name.append('span').attr('class', 'stats-chart-square').style('background', sev.color)
-      name.append('span').text(sev.label)
-      tr.append('td').attr('class', 'num').text(fmt(count))
-      tr.append('td').attr('class', 'num stats-chart-muted')
-        .text(row.total ? `${(count / row.total * 100).toFixed(1)}%` : '')
-    }
-    const foot = table.append('tr').attr('class', 'stats-chart-total')
-    foot.append('td').text('Total')
-    foot.append('td').attr('class', 'num').text(fmt(row.total))
-    foot.append('td').attr('class', 'num stats-chart-muted')
-      .text(row.avg != null ? `avg ${row.avg.toFixed(1)}` : '')
+    tip.append('div').text(`${fmt(row.total)} CVEs`)
     card.tooltip.classed('visible', true)
     moveTooltip(card.tooltip, card.plot.node(), event)
   }
 
-  update(false)
   const disconnect = observeWidth(card.plot.node(), draw)
   return { destroy: () => { disconnect(); card.root.remove() } }
 }

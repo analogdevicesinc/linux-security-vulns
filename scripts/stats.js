@@ -22,23 +22,6 @@ function versionCmp (a, b) {
   return 0
 }
 
-function cvssScore (vector) {
-  if (!vector) return null
-  try {
-    const p = Object.fromEntries(vector.split('/').slice(1).map(s => s.split(':')))
-    const AV = {N:0.85,A:0.62,L:0.55,P:0.2}[p.AV]
-    const AC = {L:0.77,H:0.44}[p.AC]
-    const PR = (p.S==='C' ? {N:0.85,L:0.68,H:0.50} : {N:0.85,L:0.62,H:0.27})[p.PR]
-    const UI = {N:0.85,R:0.62}[p.UI]
-    const C = {H:0.56,L:0.22,N:0}[p.C], I = {H:0.56,L:0.22,N:0}[p.I], A = {H:0.56,L:0.22,N:0}[p.A]
-    const ISS = 1-(1-C)*(1-I)*(1-A)
-    const imp = p.S==='U' ? 6.42*ISS : 7.52*(ISS-0.029)-3.25*Math.pow(ISS-0.02,15)
-    if (imp <= 0) return 0
-    const base = p.S==='U' ? Math.min(imp+8.22*AV*AC*PR*UI,10) : Math.min(1.08*(imp+8.22*AV*AC*PR*UI),10)
-    return Math.ceil(base*10)/10
-  } catch { return null }
-}
-
 class Stats {
   constructor (app) {
     this.$ = {}
@@ -69,36 +52,24 @@ class Stats {
     slot.replaceChildren()
     this.charts_[name] = create(slot)
   }
-  render_charts_ (results, scoreMap) {
+  render_charts_ (results) {
     const refs = results.filter(r => r.status === 'fulfilled').map(r => r.value.data)
     if (!refs.length) return
 
-    const severityOf = cve => {
-      const s = scoreMap.get(cve)
-      if (s == null) return 'unrated'
-      return s >= 7 ? 'high' : s >= 4 ? 'medium' : 'low'
-    }
     const groups = refs.map(ref => ({
       ref: ref.ref,
       label: ref.ref.replace('refs/heads/', ''),
       sha: ref.sha,
-      rows: Object.entries(ref.result).map(([defconfig, entry]) => {
-        const counts = { high: 0, medium: 0, low: 0, unrated: 0 }
-        entry.cves.forEach(cve => counts[severityOf(cve)]++)
-        const scored = entry.cves.map(cve => scoreMap.get(cve)).filter(s => s != null)
-        return { ref: ref.ref, defconfig, total: entry.cves.length, counts, avg: d3.mean(scored) ?? null }
-      }).sort((a, b) => b.total - a.total),
+      rows: Object.entries(ref.result)
+        .map(([defconfig, entry]) => ({ ref: ref.ref, defconfig, total: entry.cves.length }))
+        .sort((a, b) => b.total - a.total),
     })).filter(group => group.rows.length)
 
     const unique = new Set(refs.flatMap(ref => Object.values(ref.result).flatMap(e => e.cves)))
-    const totals = { high: 0, medium: 0, low: 0, unrated: 0 }
-    unique.forEach(cve => totals[severityOf(cve)]++)
 
     this.mount_chart_('images', slot => imageChart(slot, {
       groups,
-      totals,
       uniqueCves: unique.size,
-      scored: scoreMap.size > 0,
       onSelect: row => {
         const input = document.getElementById(`${row.ref}-${row.defconfig}`)
         if (!input) return
@@ -148,8 +119,8 @@ class Stats {
     this.mount_chart_('releases', slot => releaseChart(slot, { lines, kinds }))
   }
   render_tags_chart (tags, perDefconfig) { this.render_tags_chart_(tags, perDefconfig) }
-  render_charts (results, scoreMap) { this.render_charts_(results, scoreMap) }
-  render_vulns (results, scoreMap) {
+  render_charts (results) { this.render_charts_(results) }
+  render_vulns (results) {
     let stats = DOM.get('#security-stats', this.$.body)
     if (!stats)
       return
@@ -254,7 +225,7 @@ class Stats {
       stats.append(ref_entry)
     }
 
-    this.render_charts(results, scoreMap)
+    this.render_charts(results)
   }
   collect_vuls (obj, base_url, generation) {
     if (!DOM.get('#security-stats', this.$.body))
@@ -269,21 +240,8 @@ class Stats {
         .then(data => ({ file, data }))
     )
 
-    const scores_p = fetch(new Request(new URL('scores.json', base_url)))
-      .then(r => r.ok ? r.json() : null)
-      .catch(() => null)
-
-    Promise.all([Promise.allSettled(requests), scores_p])
-      .then(([results, scores]) => {
-        const scoreMap = new Map()
-        if (scores)
-          scores.cve.forEach((cve, i) => {
-            const s = cvssScore(scores.cvss_score[i])
-            if (s !== null) scoreMap.set(cve, s)
-          })
-        if (generation === this.generation_) this.render_vulns(results, scoreMap)
-      })
-      .catch(err => console.error(err))
+    Promise.allSettled(requests)
+      .then(results => { if (generation === this.generation_) this.render_vulns(results) })
   }
   construct_vulns () {
     if (!this.active) return
